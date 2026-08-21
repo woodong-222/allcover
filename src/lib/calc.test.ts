@@ -604,7 +604,7 @@ describe('기타비용 분담', () => {
     expect(sum(r.results.map((x) => x.extra))).toBe(9000);
   });
 
-  it('기타비용 나눗셈 나머지가 생겨도 총액이 보존된다', () => {
+  it('R13: 기타비용 10,000원 / 3명 → 각 배분이 정수이고 합이 정확히 10,000', () => {
     const ms = members('a', 'b', 'c');
     const s = mkSettlement({
       members: ms,
@@ -612,8 +612,65 @@ describe('기타비용 분담', () => {
       extras: [{ id: 'e1', label: '치킨', amount: 10000, splitAmong: 'all' }],
     });
     const r = byId(s);
-    expect(sum(r.results.map((x) => x.extra))).toBeCloseTo(10000, 6);
-    expect(sum(r.results.map((x) => x.rounded))).toBeCloseTo(10000, 6);
+    // 3,333.333… 이 아니라 3,334 / 3,333 / 3,333
+    expect(r.results.map((x) => x.extra)).toEqual([3334, 3333, 3333]);
+    expect(sum(r.results.map((x) => x.extra))).toBe(10000);
+    expect(sum(r.results.map((x) => x.rounded))).toBe(10000);
+  });
+
+  it('R13: roundingUnit 0/10/100 어느 경우에도 기타비용 분담이 정수다', () => {
+    for (const unit of [0, 10, 100] as const) {
+      const s = mkSettlement({
+        members: members('a', 'b', 'c'),
+        roundingUnit: unit,
+        extras: [{ id: 'e1', label: '치킨', amount: 10000, splitAmong: 'all' }],
+      });
+      const r = byId(s);
+      for (const row of r.results) {
+        expect(Number.isInteger(row.extra)).toBe(true);
+        expect(Number.isInteger(row.rounded)).toBe(true);
+        expect(Number.isInteger(row.adjustment)).toBe(true);
+        expect(formatKRW(row.extra)).not.toContain('.');
+      }
+      expect(sum(r.results.map((x) => x.extra))).toBe(10000);
+      // 반올림 단위와 무관하게 항목 총액은 그대로 보존된다
+      expect(sum(r.results.map((x) => x.rounded))).toBe(10000);
+    }
+  });
+
+  it('R13: 여러 금액 × 인원 조합에서 기타비용 항목 총액이 정확히 보존된다', () => {
+    const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+    let checked = 0;
+    for (let count = 1; count <= 7; count++) {
+      for (const amount of [10000, 12000, 7777, 1, 99999]) {
+        const s = mkSettlement({
+          members: members(...ids.slice(0, count)),
+          roundingUnit: 100,
+          extras: [{ id: 'e1', label: 'x', amount, splitAmong: 'all' }],
+        });
+        const r = byId(s);
+        expect(sum(r.results.map((x) => x.extra))).toBe(amount);
+        expect(r.results.every((x) => Number.isInteger(x.extra))).toBe(true);
+        const shares = r.results.map((x) => x.extra);
+        expect(Math.max(...shares) - Math.min(...shares)).toBeLessThanOrEqual(1);
+        checked++;
+      }
+    }
+    expect(checked).toBe(35);
+  });
+
+  it('기타비용 여러 건이 겹쳐도 각 항목 총액이 보존된다', () => {
+    const s = mkSettlement({
+      members: members('a', 'b', 'c'),
+      roundingUnit: 100,
+      extras: [
+        { id: 'e1', label: '치킨', amount: 10000, splitAmong: 'all' },
+        { id: 'e2', label: '맥주', amount: 5000, splitAmong: ['a', 'b'] },
+      ],
+    });
+    const r = byId(s);
+    expect(sum(r.results.map((x) => x.extra))).toBe(15000);
+    expect(r.results.every((x) => Number.isInteger(x.extra))).toBe(true);
   });
 
   it('분담 대상이 모두 멤버에서 빠진 기타비용은 무시되고 크래시하지 않는다', () => {
@@ -746,14 +803,25 @@ function assertInvariants(s: Settlement): boolean {
   const totalSub = sum(r.results.map((x) => x.subtotal));
   const totalRounded = sum(r.results.map((x) => x.rounded));
 
+  // 정수 입력이면 엔진 어디에도 부동소수 잔여가 남지 않는다 (R13).
+  // toBeCloseTo 로 느슨하게 통과시키면 소수점 유출을 놓친다 — 전부 toBe 로 검사한다.
+  for (const row of r.results) {
+    expect(Number.isInteger(row.betDelta)).toBe(true);
+    expect(Number.isInteger(row.extra)).toBe(true);
+    expect(Number.isInteger(row.subtotal)).toBe(true);
+    expect(Number.isInteger(row.rounded)).toBe(true);
+    expect(Number.isInteger(row.adjustment)).toBe(true);
+  }
+
   // 항상 성립: Σ betDelta === -Σ imbalance
-  expect(totalBet).toBeCloseTo(-r.totalImbalance, 6);
+  // (`toBe(-totalImbalance)` 는 imbalance 가 0 일 때 -0 과 +0 이 Object.is 로 갈려서 못 쓴다)
+  expect(totalBet + r.totalImbalance).toBe(0);
   // 반올림은 총액을 바꾸지 않는다
-  expect(totalRounded).toBeCloseTo(totalSub, 6);
+  expect(totalRounded).toBe(totalSub);
 
   if (r.totalImbalance === 0) {
-    expect(totalBet).toBeCloseTo(0, 6); // A4
-    expect(totalRounded).toBeCloseTo(totalBase, 6); // A5
+    expect(totalBet).toBe(0); // A4
+    expect(totalRounded).toBe(totalBase); // A5
     return true;
   }
   return false;

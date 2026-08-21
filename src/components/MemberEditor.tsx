@@ -124,7 +124,7 @@ export function MemberEditor() {
                 type="button"
                 disabled={already}
                 onClick={() => addMember(n)}
-                className={`min-h-11 rounded-full border px-3 text-sm font-medium ${
+                className={`min-h-11 min-w-11 rounded-full border px-3 text-sm font-medium ${
                   already
                     ? 'cursor-not-allowed border-slate-200 text-slate-400'
                     : 'border-slate-300 text-slate-700'

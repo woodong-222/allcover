@@ -8,6 +8,13 @@
  *   타이핑을 방해하지 않게 한다.
  * - 빈 문자열은 0으로 처리하고, 숫자가 아닌 문자(마이너스 포함)는 입력 단계에서 제거해
  *   음수 입력을 원천 차단한다.
+ * - `value`가 소수(예: PayoutEditor 프리셋이 만드는 2333.3333…)로 들어오면 항상 정수로
+ *   정규화한다. 정규화 전에는 `String(value)`가 그대로 로컬 편집 상태에 들어가 소수점이
+ *   화면에는 보이지만, 사용자가 칸을 한 글자만 건드려도 `toDigits`가 숫자 아닌 문자(소수점)를
+ *   전부 지워버려 2,333원이 2,333,333원으로 뛰는 결함이 있었다 (reviewer finding #3).
+ *   `Math.ceil`을 쓰는 이유: 이 앱의 금액은 항상 원 단위 정수여야 하고, 반올림 정책 자체가
+ *   "1원 단위 올림"으로 가는 중이다(계획서 §5-A-1). 내림/반올림으로 깎으면 그 방향과
+ *   어긋나고 총액 보존(Σ rounded === Σ subtotal)을 흔들 수 있으므로 올림으로 통일한다.
  */
 
 import { useEffect, useId, useState, type ChangeEvent } from 'react';
@@ -26,6 +33,11 @@ function toDigits(raw: string): string {
   return raw.replace(/[^0-9]/g, '');
 }
 
+/** 소수/비정수 value를 정수 원 단위로 정규화한다. 방향은 §5-A-1의 "1원 단위 올림"과 맞춘다. */
+function toIntegerWon(value: number): number {
+  return Math.ceil(value);
+}
+
 function formatDigits(digits: string): string {
   if (digits === '') return '';
   return Number(digits).toLocaleString('ko-KR');
@@ -34,12 +46,16 @@ function formatDigits(digits: string): string {
 export function NumberField({ label, value, onChange, suffix, min = 0, step, id }: NumberFieldProps) {
   const autoId = useId();
   const fieldId = id ?? autoId;
-  const [digits, setDigits] = useState(() => (value === 0 ? '' : String(value)));
+  const [digits, setDigits] = useState(() => {
+    const normalized = toIntegerWon(value);
+    return normalized === 0 ? '' : String(normalized);
+  });
 
   useEffect(() => {
+    const normalized = toIntegerWon(value);
     const current = digits === '' ? 0 : Number(digits);
-    if (current !== value) {
-      setDigits(value === 0 ? '' : String(value));
+    if (current !== normalized) {
+      setDigits(normalized === 0 ? '' : String(normalized));
     }
     // digits는 의도적으로 의존성에서 제외한다: 사용자가 타이핑 중일 때 외부 value와
     // 우리가 계산해 보낸 값이 같으면 로컬 편집 상태를 건드리지 않기 위해서다.

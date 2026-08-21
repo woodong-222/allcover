@@ -67,7 +67,7 @@ describe('shareImage', () => {
 });
 
 describe('downloadBlob', () => {
-  it('objectURL을 만들고 <a download="filename"> 클릭 후 revoke한다', () => {
+  it('objectURL을 만들고 <a download="filename">을 클릭한다', () => {
     const createObjectURL = vi.fn(() => 'blob:mock-url');
     const revokeObjectURL = vi.fn();
     vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL });
@@ -88,10 +88,59 @@ describe('downloadBlob', () => {
     expect(clickSpy).toHaveBeenCalledTimes(1);
     expect(clickedAnchor?.download).toBe('foo.png');
     expect(clickedAnchor?.href).toContain('blob:mock-url');
+
+    clickSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it('finding #7: <a>를 document.body에 붙였다가 클릭 후 뗀다 (detached 앵커의 click은 일부 브라우저가 무시한다)', () => {
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: vi.fn(() => 'blob:mock-url'),
+      revokeObjectURL: vi.fn(),
+    });
+
+    let attachedAtClickTime = false;
+    let clickedAnchor: HTMLAnchorElement | undefined;
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        clickedAnchor = this;
+        attachedAtClickTime = document.body.contains(this);
+      });
+
+    downloadBlob(makeBlob(), 'foo.png');
+
+    expect(attachedAtClickTime).toBe(true);
+    expect(clickedAnchor && document.body.contains(clickedAnchor)).toBe(false);
+
+    clickSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it('finding #7: revokeObjectURL은 click과 같은 동기 블록에서 호출되지 않고, 타이머가 한 틱 지난 뒤에 호출된다', () => {
+    vi.useFakeTimers();
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: vi.fn(() => 'blob:mock-url'),
+      revokeObjectURL,
+    });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    downloadBlob(makeBlob(), 'foo.png');
+
+    // click 직후 동기 블록에서는 아직 revoke 되지 않아야 한다 —
+    // 브라우저가 blob URL 을 읽어들일 시간을 벌기 위해서다.
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(0);
+
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock-url');
 
     clickSpy.mockRestore();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 });
 

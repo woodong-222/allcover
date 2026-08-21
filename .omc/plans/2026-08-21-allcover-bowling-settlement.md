@@ -253,12 +253,18 @@ export async function shareImage(blob: Blob, filename: string) {
       if ((e as Error).name === 'AbortError') return 'cancelled';
     }
   }
-  const url = URL.createObjectURL(blob);
-  const a = Object.assign(document.createElement('a'), { href: url, download: filename });
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, filename);
   return 'downloaded';
 }
+
+// 초안의 downloadBlob 은 아래처럼 문서에 붙이지 않은 <a> 를 클릭한 뒤 곧바로 revoke 했다.
+//   const a = Object.assign(document.createElement('a'), { href: url, download });
+//   a.click();
+//   URL.revokeObjectURL(url);   // ← 동기 revoke
+// 최신 Chrome/Firefox 에서는 동작하지만, 문서에 붙지 않은 앵커의 click 을 무시하는 브라우저가
+// 있고 동기 revoke 는 다운로드가 URL 을 다 읽기 전에 취소시킬 수 있다. 다운로드는 데스크탑과
+// 공유 미지원 환경의 **유일한 경로**(D3)라 조용히 실패하면 대안이 없다. 그래서 실제 구현은
+// body 에 append -> click -> remove 하고 revoke 를 한 틱 미룬다. (2026-08-21 리뷰 finding #7)
 ```
 - `src/components/ShareBar.tsx` — 공유 / 이미지 저장 / 텍스트 복사
 - **완료 기준**: D1–D7
@@ -303,10 +309,18 @@ export async function shareImage(blob: Blob, filename: string) {
 - `Settlement.roundingUnit` 필드 삭제, `Prefs.roundingUnit` 삭제, `FeeSettings`의 반올림 단위 세그먼트 컨트롤 삭제
 - `money.roundTo`는 `Math.ceil` 기준 1원 단위로 단순화
 - **총액 보존은 유지한다**: 전원을 올리면 걷은 합계가 실제 결제액보다 커지므로, 그 초과분을 총무(없으면 최대 부담자)가 흡수해 `Σ rounded === Σ subtotal` 이 정확히 성립하게 한다. `distributeWithRemainder`의 기존 흡수 구조를 그대로 쓰되 단위만 1원 올림으로 바꾼다
-- 인수조건 **B1·B2는 폐기**하고 아래로 대체한다
-  - **B1'**: 임의 소수 subtotal 집합에 대해 각자 `rounded`가 정수이고 `Σ rounded === Σ subtotal`
+- 인수조건 **B1·B2는 폐기**하고 아래로 대체한다 (reviewer 설계검토 반영, 2026-08-21)
+  - **B1'**: **`Σ subtotal`이 정수인** subtotal 집합에 대해 각자 `rounded`가 정수이고 `Σ rounded === Σ subtotal`
+    - *초안의 B1'은 "임의 소수 subtotal"이라고 썼는데 **수학적으로 모순**이었다. `Σ subtotal`이 소수면 정수들의 합이 그 값이 될 수 없다. 실제 앱에서는 전제가 항상 성립한다 — 사용자 입력은 `NumberField`가 정수로 강제하고, 나눗셈은 전부 `splitEvenly`로 원금이 보존된다.*
+    - 전제를 코드로도 강제한다: `remainder = total - roundedTotal`을 흡수자에게 더하기 전에 `Math.round`로 스냅해 부동소수 잔여가 흡수자 행에 새지 않게 한다
   - **B2'**: 흡수자를 제외한 전원의 `rounded >= subtotal` (올림 방향 보장)
-  - B3(흡수 규칙)·B4(음수 표기)는 유지
+  - **B5'**: 모든 `rounded`가 `Number.isInteger` — **흡수자 행과 음수 행 포함**. B1'을 전제로 약화시키면 흡수자 행이 빠져나가는데, 5-A-1이 존재하는 이유가 정확히 그 행이다
+  - **B6' (가장 중요)**: **표시 문자열에 소수점이 없다.** `formatKRW(rounded)`, `formatSigned(betDelta)`, `formatSigned(adjustment)` 어디에도 `.`이 없어야 한다
+    - *`betDelta`와 `adjustment`는 B1'/B2'의 범위 밖인데 둘 다 ResultCard에 그려진다. 리뷰 finding #2가 정확히 이 틈으로 들어왔고, 초안 인수조건은 같은 틈을 그대로 남겨뒀다. 실측 사례: 6명·기타비용 13,000원에서 `adjustment = 1.8e-12`라 **"잔돈 조정 +0원" 배지가 공유 이미지에 박힌다.***
+  - **B3 유지하되 조건 강화**: `adjustment`가 정수로 스냅되므로 `!== 0` 판정을 유지한다. 스냅이 빠지면 sub-원 잔여로 무의미한 배지가 뜬다
+  - **B4 갈아엎기**: 기존 `roundTo`는 **부호 대칭**(0에서 멀어지는 방향, `roundTo(-3350,100) === -3400`)인데 `Math.ceil`은 0 쪽으로 간다(`ceil(-2440.5) === -2440`). "단위만 바꾼다"고 하면 부호 트릭이 그대로 남는다. **기존 B4 테스트도 함께 교체해야 한다**
+
+- **선행 조건**: 리뷰 finding #2(transfer 나눗셈 정수화)와 기타비용 `splitEvenly`가 **먼저 착지해야 한다.** `subtotal = gameFee + shoe + extra + betDelta`에서 앞 셋은 이미 정수이고 소수를 만드는 유일한 항이 `betDelta`다. 1원 올림은 `rounded`만 정수로 만들 뿐 `betDelta` 열과 `adjustment` 배지는 소수로 남는다. **순서: #2 → 기타비용 → 5-A-1.** (2026-08-21 기준 #2 완료, 기타비용 진행 중)
 
 ### 5-A-2. 정산 모드 / 내기 모드 분리
 

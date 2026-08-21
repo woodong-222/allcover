@@ -11,12 +11,26 @@
 
 export type ShareOutcome = 'shared' | 'cancelled' | 'downloaded' | 'failed';
 
-/** blob 을 파일로 다운로드시킨다. */
+/**
+ * blob 을 파일로 다운로드시킨다.
+ *
+ * 두 가지를 지킨다 (둘 다 알려진 브라우저별 다운로드 취소 패턴을 피하기 위함):
+ * 1. `<a>` 를 `document.body` 에 붙였다가 뗀다 — 일부 브라우저는 문서에 붙지 않은
+ *    (detached) 앵커의 click()으로 시작된 다운로드를 무시하거나 취소한다.
+ * 2. `revokeObjectURL` 을 click 과 같은 동기 블록에서 바로 호출하지 않는다 — 브라우저가
+ *    blob URL 을 실제로 읽어들이기 전에 무효화되면 다운로드가 조용히 실패할 수 있다.
+ *    `setTimeout(..., 0)` 으로 한 틱 미뤄서 다운로드가 시작될 시간을 준다.
+ *    "불필요해 보인다"고 지우지 말 것 — 최신 데스크탑 Chrome/Firefox에서는 revoke를
+ *    바로 해도 대개 멀쩡하지만, 이 앱에서 다운로드는 공유 미지원 환경의 유일한 폴백
+ *    경로라(D3) 조용히 실패하면 사용자에게 대안이 없다.
+ */
 export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a = Object.assign(document.createElement('a'), { href: url, download: filename });
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 /**

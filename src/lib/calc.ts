@@ -87,18 +87,17 @@ export function calculate(settlement: Settlement): CalcResult {
     }
   }
 
-  // 기타비용은 항목마다 분담 대상에게 균등 분배하고, 나눗셈 잔액은 한 명이 흡수해 총액을 보존한다.
+  // 기타비용은 항목마다 분담 대상에게 정수로 균등 분배한다. 나머지 1원씩은 앞사람부터
+  // 흡수하므로 항목 총액이 정확히 보존되고, 10,000/3 같은 경우에도 소수점이 남지 않는다 (R13).
   const extra = zeroed(ids);
   for (const item of settlement.extras) {
     const sharers = (item.splitAmong === 'all' ? ids : item.splitAmong).filter((id) =>
       known.has(id),
     );
-    if (sharers.length === 0) continue;
-    const share = item.amount / sharers.length;
-    const shares: Record<string, number> = {};
-    for (const id of sharers) shares[id] = share;
-    const spread = distributeWithRemainder(shares, settlement.roundingUnit);
-    for (const id of sharers) extra[id] += spread[id].rounded;
+    const shares = splitEvenly(item.amount, sharers.length);
+    sharers.forEach((id, i) => {
+      extra[id] += shares[i];
+    });
   }
 
   const shoeRenters = new Set(settlement.shoeRenters);

@@ -76,4 +76,17 @@ describe('ExtraCosts', () => {
 
     expect(useSettlementStore.getState().settlement.extras).toHaveLength(0);
   });
+
+  it('E2: 분담 대상 체크박스를 감싼 label이 44x44px 히트 영역을 갖는다 (한 글자 이름도)', async () => {
+    useSettlementStore.getState().addMember('가');
+    const user = userEvent.setup();
+    render(<ExtraCosts />);
+
+    await user.click(screen.getByRole('button', { name: '지정 멤버' }));
+
+    const label = screen.getByLabelText('가').closest('label');
+    expect(label).not.toBeNull();
+    expect(label?.className).toMatch(/min-h-11/);
+    expect(label?.className).toMatch(/min-w-11/);
+  });
 });

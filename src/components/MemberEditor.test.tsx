@@ -78,4 +78,13 @@ describe('MemberEditor', () => {
     expect(useSettlementStore.getState().settlement.members).toHaveLength(2);
     expect(screen.getAllByText('중복')).toHaveLength(2);
   });
+
+  it('reviewer finding #8: 최근 멤버 이름 칩이 44x44px 히트 영역을 갖는다 (한 글자 이름도)', () => {
+    usePrefsStore.setState({ recentMemberNames: ['가'] });
+    render(<MemberEditor />);
+
+    const chip = screen.getByRole('button', { name: '가' });
+    expect(chip.className).toMatch(/min-h-11/);
+    expect(chip.className).toMatch(/min-w-11/);
+  });
 });

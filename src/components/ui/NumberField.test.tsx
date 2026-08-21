@@ -54,4 +54,23 @@ describe('NumberField', () => {
     render(<NumberField label="금액" value={0} onChange={() => {}} suffix="원" />);
     expect(screen.getByText('원')).toBeInTheDocument();
   });
+
+  it('reviewer finding #3: 소수 value(payout 프리셋 등)를 받으면 정수로 표시하고, 한 글자만 입력해도 금액이 1,000배로 튀지 않는다', async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    // PayoutEditor 승자독식 프리셋이 실제로 만들어내는 소수값 (7명 3팀, ante 1,000 사례).
+    render(<NumberField label="배당" value={2333.3333333333335} onChange={onChange} />);
+
+    const input = screen.getByLabelText('배당');
+    // 표시값은 항상 정수여야 한다 — 소수점이 화면에 남아있으면 안 된다.
+    expect(input).toHaveValue('2,334');
+
+    await user.type(input, '5');
+
+    const lastValue = onChange.mock.calls.at(-1)?.[0] as number;
+    // 버그가 있었다면 "2333.333" 문자열에서 소수점이 지워져 2,333,335 근처(약 1,000배)로 튀었다.
+    // 정상 동작은 정수 "2334" 뒤에 입력한 자리 하나가 더 붙는 수준(23345)이어야 한다.
+    expect(lastValue).toBeLessThan(100_000); // 1,000배로 튀면 백만 단위가 된다
+    expect(lastValue).toBe(23345);
+  });
 });
