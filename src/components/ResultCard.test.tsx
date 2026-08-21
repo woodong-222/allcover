@@ -170,6 +170,70 @@ describe('ResultCard', () => {
     expect(screen.queryByTestId('imbalance-warning')).not.toBeInTheDocument();
   });
 
+  it('불일치 판이 여러 개면 경고 블록에 판 번호와 어긋난 금액을 전부 나열한다', () => {
+    const members = makeMembers(2);
+    const rounds: Round[] = [
+      {
+        id: 'r1',
+        participants: ['m1', 'm2'],
+        teams: null,
+        method: 'pot',
+        ante: 1000,
+        payout: [2000],
+        ranking: [['m1']],
+        losers: [],
+        transferSource: 'custom',
+        transferAmount: 0,
+      },
+      {
+        id: 'r2',
+        participants: ['m1', 'm2'],
+        teams: null,
+        method: 'pot',
+        ante: 1000,
+        payout: [4000],
+        ranking: [['m2']],
+        losers: [],
+        transferSource: 'custom',
+        transferAmount: 0,
+      },
+      {
+        id: 'r3',
+        participants: ['m1', 'm2'],
+        teams: null,
+        method: 'none',
+        ante: 0,
+        payout: [],
+        ranking: [],
+        losers: [],
+        transferSource: 'custom',
+        transferAmount: 0,
+      },
+    ];
+    const settlement = makeSettlement({ members, rounds });
+    const breakdowns: RoundBreakdown[] = [
+      { roundId: 'r1', delta: { m1: 0, m2: 0 }, imbalance: 1000 },
+      { roundId: 'r2', delta: { m1: 0, m2: 0 }, imbalance: -500 },
+    ];
+    render(
+      <ResultCard
+        {...baseCardProps}
+        settlement={settlement}
+        results={members.map((m) => makeResult(m.id))}
+        breakdowns={breakdowns}
+        totalImbalance={500}
+      />,
+    );
+    const hint = screen.getByTestId('imbalance-cause-hint');
+    // 1판, 2판 둘 다 나열되고, 3판(불일치 없음)은 나열되지 않는다
+    expect(hint).toHaveTextContent('1판');
+    expect(hint).toHaveTextContent('+1,000원');
+    expect(hint).toHaveTextContent('2판');
+    expect(hint).toHaveTextContent('-500원');
+    expect(hint.textContent).not.toMatch(/3판/);
+    expect(hint).toHaveTextContent('참여 인원을 바꾸면 판돈 총액이 달라지므로');
+  });
+
   it('transfers를 TransferList를 통해 렌더하고, 총무 지정 시 헤더에 총무 이름을 보여준다', () => {
     const members = makeMembers(3);
     const settlement = makeSettlement({ members, treasurerId: 'm1' });
@@ -192,6 +256,41 @@ describe('ResultCard', () => {
     const rows = screen.getAllByTestId('transfer-row');
     expect(rows).toHaveLength(2);
     expect(screen.getByText(/총무 멤버1/)).toBeInTheDocument();
+    // 총무 모드에서는 그리디 잔액 안내가 뜨지 않는다
+    expect(screen.queryByTestId('greedy-remainder-note')).not.toBeInTheDocument();
+  });
+
+  it('총무 미지정이면 송금 목록 아래에 그리디 모드 잔액 안내를 보여준다', () => {
+    const members = makeMembers(2);
+    const settlement = makeSettlement({ members });
+    const results = [
+      makeResult('m1', { rounded: 5000 }),
+      makeResult('m2', { rounded: -5000 }),
+    ];
+    render(
+      <ResultCard
+        {...baseCardProps}
+        settlement={settlement}
+        results={results}
+        transfers={[{ from: 'm1', to: 'm2', amount: 5000 }]}
+      />,
+    );
+    expect(screen.getByTestId('greedy-remainder-note')).toHaveTextContent(
+      '목록에 없는 잔액은 각자 카운터에서 결제하세요.',
+    );
+  });
+
+  it('transfers가 빈 배열이면 "정산할 금액이 없습니다" 안내를 보여준다', () => {
+    const members = makeMembers(2);
+    const settlement = makeSettlement({ members });
+    render(
+      <ResultCard
+        {...baseCardProps}
+        settlement={settlement}
+        results={members.map((m) => makeResult(m.id, { rounded: 0, subtotal: 0 }))}
+      />,
+    );
+    expect(screen.getByText('정산할 금액이 없습니다')).toBeInTheDocument();
   });
 
   it('D7: pot 방식 라운드 요약에 방식·판돈·순위가 한 줄로 포함된다', () => {

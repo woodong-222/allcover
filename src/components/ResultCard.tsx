@@ -115,7 +115,26 @@ export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function R
           className="mb-4 rounded-lg px-3 py-2 text-sm font-medium"
           style={{ backgroundColor: 'var(--card-accent-soft)', color: 'var(--card-positive)' }}
         >
-          ⚠ 배당 불일치 총 {formatKRW(totalImbalance)} — 판별 배당 합계를 다시 확인하세요
+          <p>⚠ 배당 불일치 총 {formatKRW(totalImbalance)} — 판별 배당 합계를 다시 확인하세요</p>
+          {/*
+           * 원인 힌트: pot 라운드 진행 중 참여 인원이 바뀌면(예: removeMember, toggleParticipant)
+           * 판돈 총액(ante × 참여인원)만 따라 변하고 사용자가 입력해둔 payout은 그대로 남아
+           * 멀쩡하던 판이 불균형해질 수 있다. 앱이 배당을 말없이 고치지 않고 그대로 반영하는
+           * 대신, 어느 판이 왜 어긋났는지 알려줘야 사용자가 원인을 찾을 수 있다.
+           */}
+          {roundImbalances.length > 0 && (
+            <p data-testid="imbalance-cause-hint" className="mt-1 text-xs font-normal">
+              걷은 판돈과 나눠준 배당이 어긋난 판:{' '}
+              {roundImbalances
+                .map((b) => {
+                  const roundIndex = rounds.findIndex((r) => r.id === b.roundId);
+                  const label = roundIndex >= 0 ? `${roundIndex + 1}판` : b.roundId;
+                  return `${label} ${formatSigned(b.imbalance)}원`;
+                })
+                .join(', ')}
+              . 참여 인원을 바꾸면 판돈 총액이 달라지므로, 해당 판의 배당을 다시 확인해주세요.
+            </p>
+          )}
         </div>
       )}
 

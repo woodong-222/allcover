@@ -23,43 +23,60 @@ export type PayoutEditorProps = {
 /**
  * 남은 판돈을 배당 배열에 흡수시켜 imbalance를 정확히 0으로 만든다.
  *
- * 1. 마지막 등수 그룹에 인당 100원 단위로 나눠 담고, 남는 금액은 1등 그룹에 인당 균등하게 얹는다.
- * 2. 1등 인원수로 나누어떨어지지 않거나 등수 그룹이 하나뿐이면,
- *    마지막 등수 그룹에 원 단위로 정확히 나눠 담는다.
- * 3. 초과분이 커서 마지막 등수 배당이 0원 밑으로 내려가야 하면 전체 배당을 판돈 비율로 비례 축소한다.
+ * 1. 배당이 판돈을 넘었으면 마지막 등수부터 인당 배당을 0원으로 비워 초과분을 걷어낸다.
+ *    (1등 그룹은 비우지 않는다. 음수 배당을 만들지 않기 위한 단계)
+ * 2. 마지막 등수 그룹에 인당 100원 단위로 나눠 담고, 남는 금액은 1등 그룹에 인당 균등하게 얹는다.
+ * 3. 1등 인원수로 나누어떨어지지 않으면, 뒤 등수부터 인원수로 딱 나누어떨어지는 등수를 찾아 통째로 얹는다.
+ * 4. 어떤 등수로도 원 단위로 나뉘지 않으면 마지막 등수 그룹에 그대로 나눠 담는다.
  *
  * 어느 경로를 타도 결과 배당합은 pot과 정확히 같아진다.
  */
 export function distributeRemainder(payout: number[], sizes: number[], pot: number): number[] {
   const next = sizes.map((_, i) => payout[i] ?? 0);
-  const total = next.reduce((acc, p, i) => acc + p * sizes[i], 0);
-  const remaining = pot - total;
-  if (remaining === 0) return next;
-
   const paid = sizes.map((n, i) => (n > 0 ? i : -1)).filter((i) => i >= 0);
   if (paid.length === 0) return next;
+
+  let remaining = pot - next.reduce((acc, p, i) => acc + p * sizes[i], 0);
+
+  // 1) 초과분 걷어내기
+  for (let k = paid.length - 1; k >= 1 && remaining < 0; k--) {
+    const i = paid[k];
+    const capacity = next[i] * sizes[i];
+    if (capacity === 0) continue;
+    if (capacity > -remaining) break; // 이 등수 안에서 다 흡수된다 → 아래 단계로
+    remaining += capacity;
+    next[i] = 0;
+  }
+  if (remaining === 0) return next;
+
+  // 2) 마지막 등수에 100원 단위 + 1등 잔액 흡수
   const first = paid[0];
   const last = paid[paid.length - 1];
-  const lastSize = sizes[last];
-
-  // 3) 마지막 등수만으로 초과분을 흡수하면 음수 배당이 된다 → 전체 비례 축소
-  if (next[last] + remaining / lastSize < 0) {
-    if (total === 0) return next;
-    const scale = pot / total;
-    return next.map((p) => p * scale);
-  }
-
-  // 1) 100원 단위 배분 + 1등 잔액 흡수
-  const per = Math.floor(remaining / lastSize / 100) * 100;
-  const leftover = remaining - per * lastSize;
-  if (first !== last && next[last] + per >= 0 && leftover % sizes[first] === 0) {
+  const per = Math.floor(remaining / sizes[last] / 100) * 100;
+  const leftover = remaining - per * sizes[last];
+  if (
+    first !== last &&
+    next[last] + per >= 0 &&
+    leftover % sizes[first] === 0 &&
+    next[first] + leftover / sizes[first] >= 0
+  ) {
     next[last] += per;
     next[first] += leftover / sizes[first];
     return next;
   }
 
-  // 2) 원 단위로 마지막 등수에 정확히 배분
-  next[last] += remaining / lastSize;
+  // 3) 나누어떨어지는 등수를 뒤에서부터 찾는다
+  for (let k = paid.length - 1; k >= 0; k--) {
+    const i = paid[k];
+    const share = remaining / sizes[i];
+    if (Number.isInteger(share) && next[i] + share >= 0) {
+      next[i] += share;
+      return next;
+    }
+  }
+
+  // 4) 최후 수단: 마지막 등수에 그대로 나눠 담는다
+  next[last] += remaining / sizes[last];
   return next;
 }
 
@@ -169,10 +186,10 @@ export function PayoutEditor({ round }: PayoutEditorProps) {
       </div>
 
       <p className="text-xs text-slate-600">
-        나머지 자동 분배는 남은 판돈을 마지막 등수 그룹에 인당 100원 단위로 나눠 담고, 남는 금액은
-        1등 그룹에 인당 균등하게 얹습니다. 1등 인원수로 나누어떨어지지 않거나 등수가 하나뿐이면
-        마지막 등수 그룹에 원 단위로 정확히 나눠 담고, 초과분이 커서 배당이 음수가 될 상황이면 전체
-        배당을 판돈 비율로 줄입니다. 어느 쪽이든 남은 판돈은 정확히 0원이 됩니다.
+        나머지 자동 분배는 남은 판돈을 마지막 등수 그룹에 인당 100원 단위로 나눠 담고, 남는 금액을
+        1등 그룹에 인당 균등하게 얹습니다. 1등 인원수로 나누어떨어지지 않으면 인원수로 딱 나뉘는
+        등수를 뒤에서부터 찾아 얹습니다. 배당이 판돈을 넘은 경우에는 마지막 등수부터 인당 배당을
+        0원으로 비워 초과분을 걷어냅니다. 어느 쪽이든 남은 판돈은 정확히 0원이 됩니다.
       </p>
     </div>
   );

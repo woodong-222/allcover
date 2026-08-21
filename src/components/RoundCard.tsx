@@ -184,7 +184,7 @@ export function RoundCard({ round, index }: RoundCardProps) {
             </div>
             {round.transferSource === 'gameFee' ? (
               <p className="text-sm text-slate-700">
-                한판비 {formatKRW(gameFeePerGame)}를 그대로 씁니다.
+                한판비 {formatKRW(gameFeePerGame)}을 그대로 씁니다.
               </p>
             ) : (
               <NumberField
