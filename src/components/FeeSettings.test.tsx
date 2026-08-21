@@ -11,7 +11,7 @@ beforeEach(() => {
 });
 
 describe('FeeSettings', () => {
-  it('E3/E4: 게임 단가/신발비/기본 판돈 입력이 label로 연결되고 numeric 키패드를 쓴다', () => {
+  it('E3: 게임 단가/신발비/기본 판돈 입력이 label로 연결되고 numeric 키패드를 쓴다 (E4 전제조건, 실제 Tab 순회 검증은 a11y.test.tsx)', () => {
     render(<FeeSettings />);
     for (const label of ['게임 단가', '신발비', '기본 판돈']) {
       const input = screen.getByLabelText(label);

@@ -35,6 +35,18 @@ type PrefsState = Prefs & {
   addRecentMemberName: (name: string) => void;
 };
 
+/** 버전이 일치해 migrate 없이 그대로 쓰이는 값이므로 여기서 최소한의 모양을 검사한다 */
+function isValidPrefsState(state: unknown): boolean {
+  if (typeof state !== 'object' || state === null) return false;
+  const s = state as Record<string, unknown>;
+  return (
+    typeof s.gameFeePerGame === 'number' &&
+    typeof s.shoeFee === 'number' &&
+    typeof s.defaultAnte === 'number' &&
+    Array.isArray(s.recentMemberNames)
+  );
+}
+
 export const usePrefsStore = create<PrefsState>()(
   persist(
     (set) => ({
@@ -54,7 +66,7 @@ export const usePrefsStore = create<PrefsState>()(
     {
       name: STORAGE_KEY,
       version: CURRENT_VERSION,
-      storage: createGuardedStorage<Prefs>(),
+      storage: createGuardedStorage<Prefs>(isValidPrefsState),
       partialize: (state) => ({
         gameFeePerGame: state.gameFeePerGame,
         shoeFee: state.shoeFee,

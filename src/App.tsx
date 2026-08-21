@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useSettlementStore } from './store/useSettlementStore';
 import { calculate } from './lib/calc';
 import { settleTransfers } from './lib/settle';
@@ -6,7 +6,7 @@ import { createCapturer } from './lib/capture';
 import { shareImage, downloadBlob, copyText, type ShareOutcome } from './lib/share';
 import { buildSummaryText } from './lib/summaryText';
 import { todayFilename } from './lib/format';
-import { isPersistenceAvailable } from './lib/storage';
+import { subscribePersistence, getPersistenceSnapshot } from './lib/storage';
 import { MemberEditor } from './components/MemberEditor';
 import { FeeSettings } from './components/FeeSettings';
 import { ShoeRentalPicker } from './components/ShoeRentalPicker';
@@ -33,7 +33,16 @@ export default function App() {
   const [captureReady, setCaptureReady] = useState(false);
   const [outcome, setOutcome] = useState<ShareOutcome | undefined>(undefined);
 
-  const persistenceOk = useMemo(() => isPersistenceAvailable(), []);
+  /**
+   * 마운트 시 한 번만 판정하면 안 된다. 사파리 프라이빗 모드는 처음부터 막혀 있어 잡히지만
+   * **quota 초과는 세션 중간에 발생**하므로, 그때 배너가 뜨지 않으면 사용자는 조용히
+   * 데이터를 잃는다 (인수조건 C4).
+   */
+  const persistenceOk = useSyncExternalStore(
+    subscribePersistence,
+    getPersistenceSnapshot,
+    getPersistenceSnapshot
+  );
 
   const { results, breakdowns, totalImbalance } = useMemo(
     () => calculate(settlement),

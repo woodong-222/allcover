@@ -11,7 +11,7 @@ beforeEach(() => {
 });
 
 describe('MemberEditor', () => {
-  it('E3/E4: 이름 입력창이 label로 연결된다', () => {
+  it('이름 입력창이 label과 연결되어 있다 (E4 전제조건, 실제 Tab 순회 검증은 a11y.test.tsx)', () => {
     render(<MemberEditor />);
     expect(screen.getByLabelText('멤버 이름')).toBeInTheDocument();
   });

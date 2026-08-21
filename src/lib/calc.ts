@@ -3,7 +3,7 @@
  * 계획서: .omc/plans/2026-08-21-allcover-bowling-settlement.md §2, 인수조건 A1~A11
  */
 import type { CalcResult, MemberResult, Round, RoundBreakdown, Settlement } from '../types';
-import { distributeWithRemainder } from './money';
+import { distributeWithRemainder, splitEvenly } from './money';
 
 function zeroed(ids: string[]): Record<string, number> {
   const out: Record<string, number> = {};
@@ -35,8 +35,13 @@ export function roundDelta(round: Round, gameFeePerGame: number): RoundBreakdown
     let payoutTotal = 0;
     groups.forEach((group, rank) => {
       const perPerson = round.payout[rank] ?? 0;
-      payoutTotal += perPerson * group.length;
-      for (const id of group) if (!payoutOf.has(id)) payoutOf.set(id, perPerson);
+      for (const id of group) {
+        // 같은 멤버가 두 그룹에 들어가 있으면 상위 등수 배당만 인정한다.
+        // payoutOf 와 payoutTotal 의 집계 기준이 어긋나면 `Σ betDelta === -imbalance` 가 깨진다.
+        if (payoutOf.has(id)) continue;
+        payoutOf.set(id, perPerson);
+        payoutTotal += perPerson;
+      }
     });
 
     for (const id of participants) delta[id] = round.ante - (payoutOf.get(id) ?? 0);
@@ -52,7 +57,12 @@ export function roundDelta(round: Round, gameFeePerGame: number): RoundBreakdown
 
   const amount = round.transferSource === 'gameFee' ? gameFeePerGame : round.transferAmount;
   const pot = amount * winners.length;
-  for (const id of losers) delta[id] = pot / losers.length;
+  // 판돈을 나누어떨어지지 않을 때 1/3 = 0.333… 이 그대로 공유 이미지에 찍히면 안 된다.
+  // 정수로 쪼개되 합계는 정확히 pot 이라 제로섬은 그대로 유지된다 (계획서 R13).
+  const shares = splitEvenly(pot, losers.length);
+  losers.forEach((id, i) => {
+    delta[id] = shares[i];
+  });
   for (const id of winners) delta[id] = -amount;
   return { roundId: round.id, delta, imbalance: 0 };
 }

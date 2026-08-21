@@ -13,6 +13,26 @@ export function roundTo(amount: number, unit: 0 | 10 | 100): number {
   return sign * Math.round(Math.abs(amount) / unit) * unit;
 }
 
+/**
+ * `total` 을 `count` 명에게 나눈다. 합계는 항상 정확히 `total` 이다.
+ *
+ * `total` 이 정수면 결과도 **전부 정수**이고, 나누어떨어지지 않는 1원씩은 앞사람부터
+ * 순서대로 흡수한다. 호출 측이 넘긴 순서가 곧 결정 순서이므로 같은 입력이면 항상 같은 결과다.
+ * (소수점 금액이 그대로 공유 이미지에 찍히는 것을 막기 위한 것 — 계획서 R13)
+ */
+export function splitEvenly(total: number, count: number): number[] {
+  if (count <= 0) return [];
+  const base = Math.floor(total / count);
+  let rest = total - base * count; // 정수 입력이면 0 <= rest < count 인 정수
+  const shares: number[] = [];
+  for (let i = 0; i < count; i++) {
+    const bonus = rest > 0 ? Math.min(1, rest) : 0;
+    shares.push(base + bonus);
+    rest -= bonus;
+  }
+  return shares;
+}
+
 export type RoundedShare = { rounded: number; adjustment: number };
 
 /**

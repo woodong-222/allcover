@@ -67,16 +67,27 @@ describe('shareImage', () => {
 });
 
 describe('downloadBlob', () => {
-  it('objectURL을 만들고 <a download> 클릭 후 revoke한다', () => {
+  it('objectURL을 만들고 <a download="filename"> 클릭 후 revoke한다', () => {
     const createObjectURL = vi.fn(() => 'blob:mock-url');
     const revokeObjectURL = vi.fn();
     vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL });
-    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    // click 시점의 <a> 엘리먼트 자체(this)를 캡처해 href/download 속성이 실제로
+    // 설정됐는지 확인한다. download 값을 오타내거나 빠뜨려도 click 호출 자체는
+    // 그대로 성공하므로, click 호출 여부만 보는 검사로는 이 회귀를 못 잡는다.
+    let clickedAnchor: HTMLAnchorElement | undefined;
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        clickedAnchor = this;
+      });
 
     downloadBlob(makeBlob(), 'foo.png');
 
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(clickedAnchor?.download).toBe('foo.png');
+    expect(clickedAnchor?.href).toContain('blob:mock-url');
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock-url');
 
     clickSpy.mockRestore();

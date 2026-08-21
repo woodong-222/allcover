@@ -361,12 +361,14 @@ describe('통합 시나리오 — 계획서 §6-5 (8명 / 5판 / 총무 지정)'
     expect(totalImbalance).toBe(3000);
 
     // 따라서 Σ betDelta 는 0 이 아니라 -totalImbalance 다. 이것이 항상 성립하는 불변식이다.
-    // 3판의 진 팀이 3명이 되어 16,000/3 이 무한소수라 부동소수 오차가 남는다 → toBeCloseTo.
-    expect(sum(results.map((r) => r.betDelta))).toBeCloseTo(-totalImbalance, 6);
-    expect(sum(results.map((r) => r.betDelta))).toBeCloseTo(-3000, 6);
+    // 3판의 진 팀이 3명이 되어 16,000/3 이 나누어떨어지지 않지만, splitEvenly 가 정수로
+    // 쪼개면서 합계를 보존하므로 부동소수 잔여 없이 정확히 일치한다 (R13).
+    expect(sum(results.map((r) => r.betDelta))).toBe(-totalImbalance);
+    expect(sum(results.map((r) => r.betDelta))).toBe(-3000);
+    expect(results.every((r) => Number.isInteger(r.betDelta))).toBe(true);
 
     // 총액도 그만큼 어긋난다 — UI가 경고 배지를 띄워야 하는 상태다 (계획서 R4).
     const base = sum(results.map((r) => r.gameFee + r.shoe + r.extra));
-    expect(sum(results.map((r) => r.subtotal))).toBeCloseTo(base - totalImbalance, 6);
+    expect(sum(results.map((r) => r.subtotal))).toBe(base - totalImbalance);
   });
 });

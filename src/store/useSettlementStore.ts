@@ -31,6 +31,19 @@ function createEmptySettlement(prefs: Pick<Prefs, 'gameFeePerGame' | 'shoeFee' |
   };
 }
 
+/**
+ * localStorage에서 읽은 값이 실제로 Settlement 모양인지 최소한으로 검사한다.
+ * 버전이 일치하면 zustand persist가 migrate 없이 이 값을 그대로 쓰므로,
+ * 여기서 걸러내지 않으면 `{ settlement: null }` 같은 값이 그대로 들어가 계산 단계에서 크래시한다.
+ */
+function isValidSettlementState(state: unknown): boolean {
+  if (typeof state !== 'object' || state === null) return false;
+  const settlement = (state as Record<string, unknown>).settlement;
+  if (typeof settlement !== 'object' || settlement === null) return false;
+  const s = settlement as Record<string, unknown>;
+  return Array.isArray(s.members) && Array.isArray(s.rounds) && Array.isArray(s.extras);
+}
+
 /** 그룹(개인 또는 팀) 두 개가 같은 멤버 집합인지 비교. tapRank의 재탭 판별에 쓴다 */
 function sameMemberSet(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
@@ -203,10 +216,18 @@ export const useSettlementStore = create<SettlementState>()(
       },
 
       setTeams: (roundId, teams) => {
+        // 팀 구성이 바뀌면 팀 기준으로 매긴 순위(ranking)와 승패(losers)는 의미를 잃는다.
+        // 옛 조합이 남아있으면 같은 멤버가 새/옛 그룹에 동시에 들어가 제로섬이 깨질 수 있어
+        // (팀전 -> 개인전 전환 시 특히) 팀을 바꿀 때마다 함께 초기화한다.
         set((state) => ({
           settlement: {
             ...state.settlement,
-            rounds: mapRounds(state.settlement, roundId, (r) => ({ ...r, teams })),
+            rounds: mapRounds(state.settlement, roundId, (r) => ({
+              ...r,
+              teams,
+              ranking: [],
+              losers: [],
+            })),
           },
         }));
       },
@@ -325,7 +346,7 @@ export const useSettlementStore = create<SettlementState>()(
     {
       name: STORAGE_KEY,
       version: CURRENT_VERSION,
-      storage: createGuardedStorage<{ settlement: Settlement }>(),
+      storage: createGuardedStorage<{ settlement: Settlement }>(isValidSettlementState),
       partialize: (state) => ({ settlement: state.settlement }),
       migrate: (persistedState, version): { settlement: Settlement } => {
         try {

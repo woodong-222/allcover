@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { calculate, roundDelta } from './calc';
+import { formatKRW, formatSigned } from './format';
 import type { Extra, Member, Round, Settlement } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -272,6 +273,185 @@ describe('roundDelta — transfer(판비 내주기)', () => {
     const base = mkSettlement({ members: members('m1', 'm2', 'm3', 'm4'), rounds: [round] });
     expect(byId(base).of('m4').betDelta).toBe(12000);
     expect(byId({ ...base, gameFeePerGame: 5000 }).of('m4').betDelta).toBe(15000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R13 — 표시 금액 정수성 (소수점이 공유 이미지에 새는 것 방지)
+// ---------------------------------------------------------------------------
+
+describe('R13: 금액이 소수점으로 새지 않는다', () => {
+  it('R13: 재현 케이스(5명·판비 4,000·진 쪽 3명)에서 betDelta·adjustment 가 전부 정수다', () => {
+    const s = mkSettlement({
+      members: members('a', 'b', 'c', 'd', 'e'),
+      gameFeePerGame: 4000,
+      shoeFee: 0,
+      roundingUnit: 100,
+      rounds: [
+        mkRound({
+          id: 'r1',
+          participants: ['a', 'b', 'c', 'd', 'e'],
+          method: 'transfer',
+          losers: ['c', 'd', 'e'],
+          transferSource: 'gameFee',
+        }),
+      ],
+    });
+    const r = byId(s);
+
+    // 8,000원을 3명이 나눠 내되 2,666.666… 이 아니라 2,667 / 2,667 / 2,666 이다
+    expect(r.of('c').betDelta).toBe(2667);
+    expect(r.of('d').betDelta).toBe(2667);
+    expect(r.of('e').betDelta).toBe(2666);
+    expect(r.of('a').betDelta).toBe(-4000);
+    expect(r.of('b').betDelta).toBe(-4000);
+    expect(sum(r.results.map((x) => x.betDelta))).toBe(0);
+
+    // 화면·공유 이미지에 나가는 모든 숫자 칸이 정수여야 한다
+    for (const row of r.results) {
+      expect(Number.isInteger(row.betDelta)).toBe(true);
+      expect(Number.isInteger(row.adjustment)).toBe(true);
+      expect(Number.isInteger(row.subtotal)).toBe(true);
+      expect(Number.isInteger(row.rounded)).toBe(true);
+      expect(Number.isInteger(row.extra)).toBe(true);
+    }
+  });
+
+  it('R13: 실제 표시 문자열에 소수점이 찍히지 않는다', () => {
+    const s = mkSettlement({
+      members: members('a', 'b', 'c', 'd', 'e'),
+      gameFeePerGame: 4000,
+      shoeFee: 0,
+      roundingUnit: 100,
+      rounds: [
+        mkRound({
+          id: 'r1',
+          participants: ['a', 'b', 'c', 'd', 'e'],
+          method: 'transfer',
+          losers: ['c', 'd', 'e'],
+          transferSource: 'gameFee',
+        }),
+      ],
+    });
+    const r = byId(s);
+
+    // 수정 전에는 "+2,666.667" / "잔돈 조정 -66.667원" 이 그대로 카카오톡 이미지로 나갔다
+    for (const row of r.results) {
+      expect(formatSigned(row.betDelta)).not.toContain('.');
+      expect(formatKRW(row.adjustment)).not.toContain('.');
+      expect(formatKRW(row.rounded)).not.toContain('.');
+    }
+    expect(formatSigned(r.of('c').betDelta)).toBe('+2,667');
+  });
+
+  it('R13: 진 쪽 2~7명 × 참여 3~8명 조합에서 Σ delta === 0 이 정확히 성립한다', () => {
+    const ids = ['m0', 'm1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7'];
+    let checked = 0;
+
+    for (let participantCount = 3; participantCount <= 8; participantCount++) {
+      const participants = ids.slice(0, participantCount);
+      for (let loserCount = 2; loserCount <= Math.min(7, participantCount - 1); loserCount++) {
+        for (const amount of [4000, 3333, 1000, 7777]) {
+          const b = roundDelta(
+            mkRound({
+              id: `r-${participantCount}-${loserCount}-${amount}`,
+              participants,
+              method: 'transfer',
+              losers: participants.slice(0, loserCount),
+              transferSource: 'custom',
+              transferAmount: amount,
+            }),
+            4000,
+          );
+          const deltas = Object.values(b.delta);
+          // toBeCloseTo 가 아니라 toBe — 부동소수 잔여가 하나도 없어야 한다
+          expect(sum(deltas)).toBe(0);
+          expect(deltas.every(Number.isInteger)).toBe(true);
+          expect(b.imbalance).toBe(0);
+          checked++;
+        }
+      }
+    }
+    expect(checked).toBe(84);
+  });
+
+  it("R13: transferSource 'gameFee' 로 나누어떨어지지 않아도 정수가 유지된다", () => {
+    const b = roundDelta(
+      mkRound({
+        id: 'r1',
+        participants: ['a', 'b', 'c', 'd', 'e', 'f', 'g'],
+        method: 'transfer',
+        losers: ['e', 'f', 'g'],
+        transferSource: 'gameFee',
+      }),
+      4500,
+    );
+    // pot = 4,500 × 4 = 18,000 → 3명이 정확히 6,000씩
+    expect(b.delta).toEqual({ a: -4500, b: -4500, c: -4500, d: -4500, e: 6000, f: 6000, g: 6000 });
+    expect(sum(Object.values(b.delta))).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 중복 멤버 방어 — payoutOf 와 payoutTotal 의 집계 기준 일치
+// ---------------------------------------------------------------------------
+
+describe('ranking 에 중복 멤버가 있어도 불변식이 깨지지 않는다', () => {
+  it('같은 멤버가 두 순위 그룹에 들어가도 Σ betDelta === -imbalance 가 유지된다', () => {
+    const b = roundDelta(
+      mkRound({
+        id: 'r1',
+        participants: ['a', 'b', 'c'],
+        method: 'pot',
+        ante: 1000,
+        payout: [3000, 1000],
+        ranking: [['a'], ['a', 'b']], // a 가 1등과 2등 그룹에 중복 등장
+      }),
+      4000,
+    );
+
+    // 상위 등수 배당만 인정한다: a 3,000 / b 1,000 → payoutTotal 4,000, pot 3,000
+    expect(b.delta).toEqual({ a: -2000, b: 0, c: 1000 });
+    expect(b.imbalance).toBe(1000);
+    expect(deltaSum(b.delta)).toBe(-b.imbalance);
+  });
+
+  it('한 그룹 안에 같은 멤버가 두 번 들어가도 배당은 1회만 계산된다', () => {
+    const b = roundDelta(
+      mkRound({
+        id: 'r2',
+        participants: ['a', 'b', 'c'],
+        method: 'pot',
+        ante: 1000,
+        payout: [3000, 1000],
+        ranking: [['a', 'a'], ['b']],
+      }),
+      4000,
+    );
+    expect(b.delta).toEqual({ a: -2000, b: 0, c: 1000 });
+    expect(b.imbalance).toBe(1000);
+    expect(deltaSum(b.delta)).toBe(-b.imbalance);
+  });
+
+  it('중복이 없는 정상 입력의 imbalance 는 그대로다 (회귀 방지)', () => {
+    const b = roundDelta(
+      mkRound({
+        id: 'r3',
+        participants: ['a1', 'a2', 'b1', 'b2', 'c1', 'c2', 'd1', 'd2'],
+        method: 'pot',
+        ante: 1000,
+        payout: [3000],
+        ranking: [
+          ['a1', 'a2'],
+          ['b1', 'b2'],
+          ['c1', 'c2'],
+          ['d1', 'd2'],
+        ],
+      }),
+      4000,
+    );
+    expect(b.imbalance).toBe(-2000);
+    expect(deltaSum(b.delta)).toBe(-b.imbalance);
   });
 });
 

@@ -38,8 +38,13 @@ function isValidEnvelope(value: unknown): value is { version: number; state: unk
 /**
  * safeStateStorage 위에 JSON 파싱/봉투 검증을 얹은 PersistStorage.
  * 파싱 실패나 잘못된 형태를 만나면 백업 후 null을 반환해 persist가 초기 상태를 쓰게 한다.
+ *
+ * `isValidState`는 각 스토어가 자신의 `state` 모양을 아는 유일한 쪽이므로 선택적으로 받는다.
+ * 버전이 현재 버전과 같으면 zustand persist는 `migrate`를 아예 호출하지 않고 이 state를
+ * 그대로 쓰기 때문에, 형태 검증을 여기서 하지 않으면 `{settlement:null}` 같은 값이 그대로
+ * 스토어에 들어가 렌더 중 TypeError로 이어질 수 있다 (C3가 막으려는 크래시).
  */
-export function createGuardedStorage<T>(): PersistStorage<T> {
+export function createGuardedStorage<T>(isValidState?: (state: unknown) => boolean): PersistStorage<T> {
   return {
     getItem: (name) => {
       const raw = safeGet(name);
@@ -55,6 +60,12 @@ export function createGuardedStorage<T>(): PersistStorage<T> {
       }
 
       if (!isValidEnvelope(parsed)) {
+        backupCorruptRaw(raw);
+        safeRemove(name);
+        return null;
+      }
+
+      if (isValidState && !isValidState(parsed.state)) {
         backupCorruptRaw(raw);
         safeRemove(name);
         return null;

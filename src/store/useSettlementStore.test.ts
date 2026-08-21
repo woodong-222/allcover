@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useSettlementStore } from './useSettlementStore';
 import { usePrefsStore, initialPrefs } from './usePrefsStore';
+import { calculate } from '../lib/calc';
 
 function resetAll() {
   usePrefsStore.setState({ ...initialPrefs });
@@ -163,6 +164,89 @@ describe('useSettlementStore: 액션 로직', () => {
     void d;
   });
 
+  it('setTeams: ranking이 채워진 라운드에 setTeams를 호출하면 ranking이 비워진다 (HIGH 회귀 수정)', () => {
+    const [a, b, c, d] = addMembers(['A', 'B', 'C', 'D']);
+    useSettlementStore.getState().addRound();
+    const roundId = useSettlementStore.getState().settlement.rounds[0].id;
+    useSettlementStore.getState().setTeams(roundId, [
+      [a.id, b.id],
+      [c.id, d.id],
+    ]);
+    useSettlementStore.getState().setMethod(roundId, 'pot');
+    useSettlementStore.getState().tapRank(roundId, 0);
+    expect(useSettlementStore.getState().settlement.rounds[0].ranking).toEqual([[a.id, b.id]]);
+
+    // 팀을 다시 편성(개인전으로 전환)하면 옛 팀 기준 순위는 의미를 잃으므로 비워져야 한다
+    useSettlementStore.getState().setTeams(roundId, null);
+    expect(useSettlementStore.getState().settlement.rounds[0].ranking).toEqual([]);
+  });
+
+  it('setTeams: losers가 채워진 라운드에 setTeams를 호출하면 losers가 비워진다 (HIGH 회귀 수정)', () => {
+    const [a, b, c, d] = addMembers(['A', 'B', 'C', 'D']);
+    useSettlementStore.getState().addRound();
+    const roundId = useSettlementStore.getState().settlement.rounds[0].id;
+    useSettlementStore.getState().setTeams(roundId, [
+      [a.id, b.id],
+      [c.id, d.id],
+    ]);
+    useSettlementStore.getState().setMethod(roundId, 'transfer');
+    useSettlementStore.getState().toggleLoser(roundId, a.id);
+    expect(new Set(useSettlementStore.getState().settlement.rounds[0].losers)).toEqual(
+      new Set([a.id, b.id])
+    );
+
+    // 팀 재편성 -> 옛 팀으로 매긴 승패도 함께 비워져야 한다. 그렇지 않으면 화면엔 아무도
+    // 진 쪽으로 안 보이는데 계산은 옛 losers에게 계속 돈을 물리는 불일치가 생긴다.
+    useSettlementStore.getState().setTeams(roundId, [
+      [a.id, c.id],
+      [b.id, d.id],
+    ]);
+    expect(useSettlementStore.getState().settlement.rounds[0].losers).toEqual([]);
+  });
+
+  it('버그 재현: 팀전에서 개인전으로 전환 후 tapRank해도 같은 멤버가 두 그룹에 동시에 들어가지 않는다', () => {
+    // reviewer가 보고한 재현 시나리오 그대로: 4명, 게임비 4,000, ante 1,000
+    // 1) 2팀 편성 -> 2) 판돈분배, 1팀 탭(1등) -> 3) 개인전으로 전환 -> 4) m1 탭
+    const [m1, m2, m3, m4] = addMembers(['m1', 'm2', 'm3', 'm4']);
+    useSettlementStore.getState().setFees({ gameFeePerGame: 4000 });
+    useSettlementStore.getState().addRound();
+    const roundId = useSettlementStore.getState().settlement.rounds[0].id;
+
+    useSettlementStore.getState().setTeams(roundId, [
+      [m1.id, m2.id],
+      [m3.id, m4.id],
+    ]);
+    useSettlementStore.getState().setMethod(roundId, 'pot');
+    useSettlementStore.getState().setAnte(roundId, 1000);
+    useSettlementStore.getState().tapRank(roundId, 0); // 팀 기준 1등: [m1,m2]
+
+    useSettlementStore.getState().setTeams(roundId, null); // 개인전으로 전환 -> setTeams 수정으로 ranking 초기화됨
+    expect(useSettlementStore.getState().settlement.rounds[0].ranking).toEqual([]);
+
+    useSettlementStore.getState().tapRank(roundId, m1.id); // 1등: m1
+    useSettlementStore.getState().tapRank(roundId, m2.id); // 2등: m2
+
+    const finalRanking = useSettlementStore.getState().settlement.rounds[0].ranking;
+    const allIds = finalRanking.flat();
+    // 같은 멤버가 두 그룹에 동시에 들어가는지(중복) 확인
+    expect(new Set(allIds).size).toBe(allIds.length);
+    expect(finalRanking).toEqual([[m1.id], [m2.id]]);
+
+    useSettlementStore.getState().setPayout(roundId, [3000, 1000]);
+
+    // Σ betDelta === 0 유지 확인 (calc.ts 교차 검증)
+    const settlement = useSettlementStore.getState().settlement;
+    const { breakdowns, totalImbalance } = calculate(settlement);
+    const sumDelta = Object.values(breakdowns[0].delta).reduce((sum, v) => sum + v, 0);
+    expect(sumDelta).toBe(0);
+    expect(totalImbalance).toBe(0);
+
+    // 실제 결제 총액도 게임비 기준(4명 x 4,000원 = 16,000원)과 일치해야 한다
+    const { results } = calculate(settlement);
+    const total = results.reduce((sum, r) => sum + r.subtotal, 0);
+    expect(total).toBe(16000);
+  });
+
   it('removeMember: 모든 판의 participants/teams/losers/ranking, shoeRenters, extras, treasurerId에서 댕글링 참조 없이 제거된다', () => {
     const [a, b, c, d] = addMembers(['A', 'B', 'C', 'D']);
 
@@ -298,6 +382,38 @@ describe('영속성 (C1~C4): localStorage 라운드트립', () => {
     const { useSettlementStore: reloaded } = await import('./useSettlementStore');
     const s = reloaded.getState().settlement;
     expect(s.members).toEqual([]);
+
+    const backupKey = Object.keys(window.localStorage).find((k) => k.startsWith('allcover:corrupt:'));
+    expect(backupKey).toBeDefined();
+  });
+
+  it('C3(LOW 수정): 버전은 일치하지만 state 모양이 깨진 저장값도 백업 후 초기화되며 크래시하지 않는다', async () => {
+    // version이 CURRENT_VERSION과 같으면 zustand persist는 migrate를 호출하지 않고
+    // state를 그대로 쓴다. settlement가 null이면 calc.ts가 렌더 중 TypeError로 죽는다.
+    window.localStorage.setItem(
+      'allcover:session:v1',
+      JSON.stringify({ state: { settlement: null }, version: 1 })
+    );
+
+    const { useSettlementStore: reloaded } = await import('./useSettlementStore');
+    expect(() => reloaded.getState()).not.toThrow();
+    const s = reloaded.getState().settlement;
+    expect(s.members).toEqual([]);
+    expect(s.rounds).toEqual([]);
+
+    const backupKey = Object.keys(window.localStorage).find((k) => k.startsWith('allcover:corrupt:'));
+    expect(backupKey).toBeDefined();
+  });
+
+  it('C3(LOW 수정): prefs도 버전 일치 + 모양이 깨진 값이면 백업 후 초기화된다', async () => {
+    window.localStorage.setItem(
+      'allcover:prefs:v1',
+      JSON.stringify({ state: { gameFeePerGame: '오억원', recentMemberNames: null }, version: 1 })
+    );
+
+    const { usePrefsStore: reloaded } = await import('./usePrefsStore');
+    expect(reloaded.getState().gameFeePerGame).toBe(0);
+    expect(reloaded.getState().recentMemberNames).toEqual([]);
 
     const backupKey = Object.keys(window.localStorage).find((k) => k.startsWith('allcover:corrupt:'));
     expect(backupKey).toBeDefined();

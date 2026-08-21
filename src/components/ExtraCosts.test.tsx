@@ -11,7 +11,7 @@ beforeEach(() => {
 });
 
 describe('ExtraCosts', () => {
-  it('E3/E4: 항목명/금액 입력이 label로 연결되고 금액은 numeric 키패드를 쓴다', () => {
+  it('E3: 항목명/금액 입력이 label로 연결되고 금액은 numeric 키패드를 쓴다 (E4 전제조건, 실제 Tab 순회 검증은 a11y.test.tsx)', () => {
     render(<ExtraCosts />);
     expect(screen.getByLabelText('항목명')).toBeInTheDocument();
     expect(screen.getByLabelText('금액')).toHaveAttribute('inputMode', 'numeric');

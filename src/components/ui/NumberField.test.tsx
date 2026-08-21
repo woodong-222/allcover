@@ -9,7 +9,7 @@ describe('NumberField', () => {
     expect(screen.getByLabelText('게임 단가')).toHaveAttribute('inputMode', 'numeric');
   });
 
-  it('E4: label과 htmlFor로 연결되어 접근 가능하다', () => {
+  it('label과 htmlFor로 연결되어 접근 가능하다 (E4 전제조건, 실제 Tab 순회 검증은 a11y.test.tsx)', () => {
     render(<NumberField label="신발비" value={0} onChange={() => {}} />);
     expect(screen.getByLabelText('신발비')).toBeInTheDocument();
   });
