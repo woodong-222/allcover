@@ -1,0 +1,47 @@
+@import 'tailwindcss';
+
+/*
+ * 캡처(html-to-image) 대상 서브트리에서 사용하는 색은 반드시 여기의 hex 변수만 쓴다.
+ * Tailwind v4 기본 팔레트는 oklch() 라서 SVG foreignObject 직렬화 시 깨질 수 있다. (계획서 R1)
+ */
+:root {
+  --card-bg: #ffffff;
+  --card-fg: #0f172a;
+  --card-muted: #64748b;
+  --card-border: #e2e8f0;
+  --card-accent: #2563eb;
+  --card-accent-soft: #eff6ff;
+  --card-positive: #dc2626;
+  --card-negative: #059669;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: #f1f5f9;
+  color: #0f172a;
+  font-family:
+    Pretendard,
+    -apple-system,
+    BlinkMacSystemFont,
+    system-ui,
+    'Segoe UI',
+    'Apple SD Gothic Neo',
+    'Malgun Gothic',
+    sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* 모바일에서 숫자 입력 스피너 제거 */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+}
