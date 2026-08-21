@@ -1,0 +1,75 @@
+/**
+ * 공용 금액 입력 필드. 앱 전체 금액 입력에서 재사용한다.
+ * 계획서: .omc/plans/2026-08-21-allcover-bowling-settlement.md §3 인수조건 E3, E4
+ *
+ * - inputMode="numeric" 으로 모바일 숫자 키패드를 띄운다 (E3).
+ * - type="text" + 숫자만 허용하는 방식이 모바일 스핀 버튼보다 다루기 쉽다.
+ * - 편집 중에도 천 단위 콤마를 보여주되, 로컬 상태를 따로 두어 부모 값 동기화가
+ *   타이핑을 방해하지 않게 한다.
+ * - 빈 문자열은 0으로 처리하고, 숫자가 아닌 문자(마이너스 포함)는 입력 단계에서 제거해
+ *   음수 입력을 원천 차단한다.
+ */
+
+import { useEffect, useId, useState, type ChangeEvent } from 'react';
+
+export type NumberFieldProps = {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  suffix?: string;
+  min?: number;
+  step?: number;
+  id?: string;
+};
+
+function toDigits(raw: string): string {
+  return raw.replace(/[^0-9]/g, '');
+}
+
+function formatDigits(digits: string): string {
+  if (digits === '') return '';
+  return Number(digits).toLocaleString('ko-KR');
+}
+
+export function NumberField({ label, value, onChange, suffix, min = 0, step, id }: NumberFieldProps) {
+  const autoId = useId();
+  const fieldId = id ?? autoId;
+  const [digits, setDigits] = useState(() => (value === 0 ? '' : String(value)));
+
+  useEffect(() => {
+    const current = digits === '' ? 0 : Number(digits);
+    if (current !== value) {
+      setDigits(value === 0 ? '' : String(value));
+    }
+    // digits는 의도적으로 의존성에서 제외한다: 사용자가 타이핑 중일 때 외부 value와
+    // 우리가 계산해 보낸 값이 같으면 로컬 편집 상태를 건드리지 않기 위해서다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  function handleChange(e: ChangeEvent<HTMLInputElement>): void {
+    const nextDigits = toDigits(e.target.value);
+    setDigits(nextDigits);
+    const num = nextDigits === '' ? 0 : Number(nextDigits);
+    onChange(Math.max(min, num));
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor={fieldId} className="text-sm font-medium text-slate-700">
+        {label}
+      </label>
+      <div className="flex items-center gap-2">
+        <input
+          id={fieldId}
+          type="text"
+          inputMode="numeric"
+          value={formatDigits(digits)}
+          onChange={handleChange}
+          step={step}
+          className="min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-right text-slate-900"
+        />
+        {suffix && <span className="shrink-0 text-sm text-slate-700">{suffix}</span>}
+      </div>
+    </div>
+  );
+}

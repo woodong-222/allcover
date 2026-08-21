@@ -1,6 +1,6 @@
 /**
  * 결과 카드 — 캡처(html-to-image) 대상 컴포넌트.
- * 계획서: .omc/plans/2026-08-21-allcover-bowling-settlement.md §3 인수조건 D5, D7, B3 / §5 R1
+ * 계획서: .omc/plans/2026-08-21-allcover-bowling-settlement.md §3 인수조건 D5, D7, B3 / §5 R1, R9
  *
  * R1: 이 컴포넌트(및 하위 요소) 안에서 쓰는 모든 색은 src/index.css 의 hex CSS 변수
  * (--card-bg, --card-fg, --card-muted, --card-border, --card-accent, --card-accent-soft,
@@ -12,31 +12,25 @@
  * D1/R2: 부모(결과 화면)는 이 컴포넌트가 마운트된 노드를 ref 로 잡아 capture.ts의
  * captureNode/createCapturer 로 "미리" 캡처해둔다. 그래서 이 컴포넌트는 순수 표시용이며
  * 캡처 트리거를 스스로 갖지 않는다.
+ *
+ * 결합도를 낮추기 위해 계산 결과(results/breakdowns/totalImbalance/transfers)는 전부
+ * props 로 받는다. src/lib/calc.ts, settle.ts 를 이 컴포넌트가 직접 import 하지 않는다.
  */
 
 import { forwardRef } from 'react';
-import type { Member, MemberResult, Round, RoundBreakdown } from '../types';
+import type { Member, MemberResult, Round, RoundBreakdown, Settlement } from '../types';
 import { formatDate, formatKRW, formatSigned } from '../lib/format';
+import { TransferList, type Transfer } from './TransferList';
 
-export type TransferInstruction = { from: string; to: string; amount: number };
+/** R9: 13명 이상이면 행 높이·폰트를 축소해 카드가 지나치게 길어지지 않게 한다 */
+const COMPACT_THRESHOLD = 13;
 
 export type ResultCardProps = {
-  /** ISO 8601 날짜 문자열 */
-  date: string;
-  title?: string;
-  members: Member[];
-  rounds: Round[];
-  gameFeePerGame: number;
+  settlement: Settlement;
   results: MemberResult[];
   breakdowns: RoundBreakdown[];
   totalImbalance: number;
-  treasurerId?: string;
-  /**
-   * 총무 미지정 시 외부(예: src/lib/settle.ts 의 그리디 최소 송금 계산)에서 계산한
-   * 송금 리스트. treasurerId 가 있으면 이 카드가 직접 "전원 -> 총무" 리스트를 계산하므로
-   * 이 값은 무시된다.
-   */
-  transfers?: TransferInstruction[];
+  transfers: Transfer[];
 };
 
 /** memberId -> 이름 조회. 못 찾으면 id 그대로 표시(크래시 방지) */
@@ -44,17 +38,6 @@ function nameLookup(members: Member[]): Record<string, string> {
   const map: Record<string, string> = {};
   for (const m of members) map[m.id] = m.name;
   return map;
-}
-
-/** 총무가 지정된 경우: 나머지 전원의 rounded 금액을 총무 기준 송금 리스트로 변환한다 */
-function treasurerTransfers(results: MemberResult[], treasurerId: string): TransferInstruction[] {
-  return results
-    .filter((r) => r.memberId !== treasurerId && r.rounded !== 0)
-    .map((r) =>
-      r.rounded > 0
-        ? { from: r.memberId, to: treasurerId, amount: r.rounded }
-        : { from: treasurerId, to: r.memberId, amount: -r.rounded },
-    );
 }
 
 /** D7: 판별 내기 요약 한 줄. 방식·판돈(또는 금액)·순위(또는 진 쪽)를 포함한다 */
@@ -90,29 +73,18 @@ function describeRoundBet(
 }
 
 export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function ResultCard(
-  {
-    date,
-    title,
-    members,
-    rounds,
-    gameFeePerGame,
-    results,
-    breakdowns,
-    totalImbalance,
-    treasurerId,
-    transfers,
-  },
+  { settlement, results, breakdowns, totalImbalance, transfers },
   ref,
 ) {
+  const { date, title, members, rounds, gameFeePerGame, treasurerId } = settlement;
   const names = nameLookup(members);
   const nameOf = (id: string) => names[id] ?? id;
   const total = results.reduce((sum, r) => sum + r.rounded, 0);
 
-  const transferList = treasurerId
-    ? treasurerTransfers(results, treasurerId)
-    : (transfers ?? []);
-
   const roundImbalances = breakdowns.filter((b) => b.imbalance !== 0);
+  const compact = members.length >= COMPACT_THRESHOLD;
+  const cellPad = compact ? 'py-1' : 'py-2';
+  const bodyTextSize = compact ? 'text-xs' : 'text-sm';
 
   return (
     <div
@@ -133,6 +105,7 @@ export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function R
         </p>
         <p className="mt-1 text-sm" style={{ color: 'var(--card-muted)' }}>
           {formatDate(date)} · {members.length}명
+          {treasurerId && ` · 총무 ${nameOf(treasurerId)}`}
         </p>
       </header>
 
@@ -147,7 +120,11 @@ export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function R
       )}
 
       {/* 멤버별 표 */}
-      <table className="w-full border-collapse text-sm">
+      <table
+        data-testid="member-table"
+        data-compact={compact}
+        className={`w-full border-collapse ${bodyTextSize}`}
+      >
         <thead>
           <tr style={{ color: 'var(--card-muted)' }}>
             <th className="py-1 text-left font-normal">이름</th>
@@ -166,7 +143,7 @@ export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function R
               data-testid="result-row"
               style={{ borderTop: '1px solid var(--card-border)' }}
             >
-              <td className="py-2">
+              <td className={cellPad}>
                 {nameOf(r.memberId)}
                 {r.adjustment !== 0 && (
                   <span
@@ -178,17 +155,17 @@ export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function R
                   </span>
                 )}
               </td>
-              <td className="py-2 text-right">{r.gameCount}</td>
-              <td className="py-2 text-right">{formatKRW(r.gameFee)}</td>
-              <td className="py-2 text-right">{formatKRW(r.shoe)}</td>
-              <td className="py-2 text-right">{formatKRW(r.extra)}</td>
+              <td className={`${cellPad} text-right`}>{r.gameCount}</td>
+              <td className={`${cellPad} text-right`}>{formatKRW(r.gameFee)}</td>
+              <td className={`${cellPad} text-right`}>{formatKRW(r.shoe)}</td>
+              <td className={`${cellPad} text-right`}>{formatKRW(r.extra)}</td>
               <td
-                className="py-2 text-right"
+                className={`${cellPad} text-right`}
                 style={{ color: r.betDelta > 0 ? 'var(--card-positive)' : r.betDelta < 0 ? 'var(--card-negative)' : undefined }}
               >
                 {formatSigned(r.betDelta)}
               </td>
-              <td className="py-2 text-right font-semibold">
+              <td className={`${cellPad} text-right font-semibold`}>
                 {r.rounded < 0 ? `${formatKRW(Math.abs(r.rounded))} 받음` : formatKRW(r.rounded)}
               </td>
             </tr>
@@ -207,25 +184,7 @@ export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function R
 
       {/* 송금 리스트 */}
       <div className="mt-4">
-        <p className="mb-2 text-sm font-semibold" style={{ color: 'var(--card-muted)' }}>
-          송금 안내
-        </p>
-        {transferList.length > 0 ? (
-          <ul className="space-y-1 text-sm">
-            {transferList.map((t, i) => (
-              <li key={`${t.from}-${t.to}-${i}`} data-testid="transfer-row">
-                {nameOf(t.from)} → {nameOf(t.to)}에게{' '}
-                <strong style={{ color: 'var(--card-accent)' }}>{formatKRW(t.amount)}</strong>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm" style={{ color: 'var(--card-muted)' }}>
-            {treasurerId
-              ? '정산할 금액이 없습니다'
-              : '총무를 지정하면 송금 안내를 볼 수 있어요'}
-          </p>
-        )}
+        <TransferList transfers={transfers} memberNames={names} treasurerId={treasurerId} />
       </div>
 
       {/* 판별 내기 요약 (D7) */}

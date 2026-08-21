@@ -264,7 +264,8 @@ export async function shareImage(blob: Blob, filename: string) {
 - **완료 기준**: D1–D7
 
 ### M6 — 마감 및 배포
-- 폰트 self-host (`public/` 에 Pretendard 서브셋). CDN 폰트는 캡처 시 CORS로 누락됨
+- ~~폰트 self-host (`public/` 에 Pretendard 서브셋)~~ → **취소 (2026-08-21)**. `src/index.css`가 이미 시스템 폰트 스택(Pretendard 설치 시 사용, 미설치 시 Apple SD Gothic Neo / Malgun Gothic 폴백)이라 **웹폰트를 아예 쓰지 않는 편이 R3를 원천 제거**한다. self-host는 woff2 수 MB를 번들에 얹는 대가로 기기 간 렌더 일관성만 얻는데, 정산 이미지에는 그 대가가 크다고 판단했다.
+  <br>**트레이드오프(감수)**: 공유된 PNG의 글꼴이 기기마다 다르게 보인다. 숫자·레이아웃은 동일하므로 정산 정확성에는 영향 없음. 인수조건 D6(한글 깨짐 없음)은 시스템 폰트로도 충족된다.
 - 메타: `og:image`, `theme-color`, `viewport-fit=cover`, 파비콘
 - Vercel 연결 → 프리뷰 배포 → 실기기 검증
 - `README.md` 갱신 (실행/배포/내기 규칙 설명)

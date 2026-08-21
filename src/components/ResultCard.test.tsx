@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { createRef } from 'react';
 import { ResultCard } from './ResultCard';
-import type { Member, MemberResult, Round, RoundBreakdown } from '../types';
+import type { Member, MemberResult, Round, RoundBreakdown, Settlement } from '../types';
 
 function makeMembers(count: number): Member[] {
   return Array.from({ length: count }, (_, i) => ({ id: `m${i + 1}`, name: `멤버${i + 1}` }));
@@ -23,21 +23,37 @@ function makeResult(memberId: string, overrides: Partial<MemberResult> = {}): Me
   };
 }
 
-const baseProps = {
-  date: '2026-08-21',
-  gameFeePerGame: 4000,
+function makeSettlement(overrides: Partial<Settlement> = {}): Settlement {
+  return {
+    version: 1,
+    id: 's1',
+    date: '2026-08-21',
+    members: makeMembers(3),
+    gameFeePerGame: 4000,
+    shoeFee: 2000,
+    shoeRenters: [],
+    defaultAnte: 0,
+    rounds: [],
+    extras: [],
+    roundingUnit: 100,
+    ...overrides,
+  };
+}
+
+const baseCardProps = {
   breakdowns: [] as RoundBreakdown[],
   totalImbalance: 0,
-  rounds: [] as Round[],
+  transfers: [] as { from: string; to: string; amount: number }[],
 };
 
 describe('ResultCard', () => {
   it('헤더에 날짜와 인원수를 표시한다', () => {
     const members = makeMembers(3);
+    const settlement = makeSettlement({ members });
     render(
       <ResultCard
-        {...baseProps}
-        members={members}
+        {...baseCardProps}
+        settlement={settlement}
         results={members.map((m) => makeResult(m.id))}
       />,
     );
@@ -45,24 +61,69 @@ describe('ResultCard', () => {
     expect(screen.getByText(/3명/)).toBeInTheDocument();
   });
 
-  it('D5: 멤버 12명까지 잘림 없이 모든 행이 렌더된다', () => {
-    const members = makeMembers(12);
+  it('D5: 루트 카드 폭은 540px 고정이다', () => {
+    const members = makeMembers(2);
+    const settlement = makeSettlement({ members });
     render(
       <ResultCard
-        {...baseProps}
-        members={members}
+        {...baseCardProps}
+        settlement={settlement}
+        results={members.map((m) => makeResult(m.id))}
+      />,
+    );
+    const card = screen.getByTestId('result-card');
+    expect(card.style.width).toBe('540px');
+  });
+
+  it('D5: 멤버 12명까지 잘림 없이 모든 행이 렌더된다', () => {
+    const members = makeMembers(12);
+    const settlement = makeSettlement({ members });
+    render(
+      <ResultCard
+        {...baseCardProps}
+        settlement={settlement}
         results={members.map((m) => makeResult(m.id))}
       />,
     );
     expect(screen.getAllByTestId('result-row')).toHaveLength(12);
   });
 
-  it('B3: adjustment가 0이 아니면 잔돈 조정 배지를 표시한다', () => {
-    const members = makeMembers(1);
+  it('R9: 멤버 13명이면 표에 축소 스타일이 적용된다', () => {
+    const members = makeMembers(13);
+    const settlement = makeSettlement({ members });
     render(
       <ResultCard
-        {...baseProps}
-        members={members}
+        {...baseCardProps}
+        settlement={settlement}
+        results={members.map((m) => makeResult(m.id))}
+      />,
+    );
+    const table = screen.getByTestId('member-table');
+    expect(table.dataset.compact).toBe('true');
+    expect(table.className).toMatch(/text-xs/);
+  });
+
+  it('멤버 12명 이하면 축소 스타일이 적용되지 않는다', () => {
+    const members = makeMembers(12);
+    const settlement = makeSettlement({ members });
+    render(
+      <ResultCard
+        {...baseCardProps}
+        settlement={settlement}
+        results={members.map((m) => makeResult(m.id))}
+      />,
+    );
+    const table = screen.getByTestId('member-table');
+    expect(table.dataset.compact).toBe('false');
+  });
+
+  it('B3: adjustment가 0이 아니면 잔돈 조정 배지를 표시한다', () => {
+    const members = makeMembers(1);
+    const settlement = makeSettlement({ members });
+    render(
+      <ResultCard
+        {...baseCardProps}
+        settlement={settlement}
         results={[makeResult('m1', { adjustment: -100, rounded: 3300 })]}
       />,
     );
@@ -71,10 +132,11 @@ describe('ResultCard', () => {
 
   it('rounded가 음수면 "받음"으로 표기한다 (B4)', () => {
     const members = makeMembers(1);
+    const settlement = makeSettlement({ members });
     render(
       <ResultCard
-        {...baseProps}
-        members={members}
+        {...baseCardProps}
+        settlement={settlement}
         results={[makeResult('m1', { rounded: -2000 })]}
       />,
     );
@@ -83,10 +145,11 @@ describe('ResultCard', () => {
 
   it('totalImbalance가 0이 아니면 경고 배지를 표시한다', () => {
     const members = makeMembers(2);
+    const settlement = makeSettlement({ members });
     render(
       <ResultCard
-        {...baseProps}
-        members={members}
+        {...baseCardProps}
+        settlement={settlement}
         results={members.map((m) => makeResult(m.id))}
         totalImbalance={-2000}
       />,
@@ -96,60 +159,39 @@ describe('ResultCard', () => {
 
   it('imbalance가 없으면 경고 배지를 표시하지 않는다', () => {
     const members = makeMembers(2);
+    const settlement = makeSettlement({ members });
     render(
       <ResultCard
-        {...baseProps}
-        members={members}
+        {...baseCardProps}
+        settlement={settlement}
         results={members.map((m) => makeResult(m.id))}
       />,
     );
     expect(screen.queryByTestId('imbalance-warning')).not.toBeInTheDocument();
   });
 
-  it('총무 지정 시 각자 -> 총무 송금 리스트를 계산해서 보여준다', () => {
+  it('transfers를 TransferList를 통해 렌더하고, 총무 지정 시 헤더에 총무 이름을 보여준다', () => {
     const members = makeMembers(3);
+    const settlement = makeSettlement({ members, treasurerId: 'm1' });
+    const results = [
+      makeResult('m1', { rounded: 16000 }),
+      makeResult('m2', { rounded: 14000 }),
+      makeResult('m3', { rounded: 12000 }),
+    ];
     render(
       <ResultCard
-        {...baseProps}
-        members={members}
-        results={[
-          makeResult('m1', { rounded: 16000 }),
-          makeResult('m2', { rounded: 14000 }),
-          makeResult('m3', { rounded: 12000 }),
+        {...baseCardProps}
+        settlement={settlement}
+        results={results}
+        transfers={[
+          { from: 'm2', to: 'm1', amount: 14000 },
+          { from: 'm3', to: 'm1', amount: 12000 },
         ]}
-        treasurerId="m1"
       />,
     );
     const rows = screen.getAllByTestId('transfer-row');
-    // 총무 본인(m1)은 자기 자신에게 보내지 않으므로 나머지 2명만
     expect(rows).toHaveLength(2);
-    expect(screen.getByText(/멤버2 → 멤버1에게/)).toBeInTheDocument();
-    expect(screen.getByText(/멤버3 → 멤버1에게/)).toBeInTheDocument();
-  });
-
-  it('총무 미지정이고 transfers도 없으면 안내 문구를 보여준다', () => {
-    const members = makeMembers(2);
-    render(
-      <ResultCard
-        {...baseProps}
-        members={members}
-        results={members.map((m) => makeResult(m.id))}
-      />,
-    );
-    expect(screen.getByText('총무를 지정하면 송금 안내를 볼 수 있어요')).toBeInTheDocument();
-  });
-
-  it('총무 미지정이고 transfers가 주어지면 그대로 렌더한다', () => {
-    const members = makeMembers(2);
-    render(
-      <ResultCard
-        {...baseProps}
-        members={members}
-        results={members.map((m) => makeResult(m.id))}
-        transfers={[{ from: 'm1', to: 'm2', amount: 5000 }]}
-      />,
-    );
-    expect(screen.getByText(/멤버1 → 멤버2에게/)).toBeInTheDocument();
+    expect(screen.getByText(/총무 멤버1/)).toBeInTheDocument();
   });
 
   it('D7: pot 방식 라운드 요약에 방식·판돈·순위가 한 줄로 포함된다', () => {
@@ -168,11 +210,11 @@ describe('ResultCard', () => {
         transferAmount: 0,
       },
     ];
+    const settlement = makeSettlement({ members, rounds });
     render(
       <ResultCard
-        {...baseProps}
-        rounds={rounds}
-        members={members}
+        {...baseCardProps}
+        settlement={settlement}
         results={members.map((m) => makeResult(m.id))}
       />,
     );
@@ -199,11 +241,11 @@ describe('ResultCard', () => {
         transferAmount: 4000,
       },
     ];
+    const settlement = makeSettlement({ members, rounds });
     render(
       <ResultCard
-        {...baseProps}
-        rounds={rounds}
-        members={members}
+        {...baseCardProps}
+        settlement={settlement}
         results={members.map((m) => makeResult(m.id))}
       />,
     );
@@ -216,17 +258,52 @@ describe('ResultCard', () => {
   it('R1: 카드 배경/글자색이 hex CSS 변수(var(--card-*))로만 지정된다', () => {
     const ref = createRef<HTMLDivElement>();
     const members = makeMembers(1);
+    const settlement = makeSettlement({ members });
     render(
-      <ResultCard
-        {...baseProps}
-        ref={ref}
-        members={members}
-        results={[makeResult('m1')]}
-      />,
+      <ResultCard {...baseCardProps} ref={ref} settlement={settlement} results={[makeResult('m1')]} />,
     );
     const card = screen.getByTestId('result-card');
     expect(card.style.backgroundColor).toBe('var(--card-bg)');
     expect(card.style.color).toBe('var(--card-fg)');
     expect(ref.current).toBe(card);
+  });
+
+  it('R1 회귀 방지: 서브트리 어디에도 Tailwind 색상 유틸리티 클래스가 없다', () => {
+    const members = makeMembers(2);
+    const rounds: Round[] = [
+      {
+        id: 'r1',
+        participants: ['m1', 'm2'],
+        teams: null,
+        method: 'pot',
+        ante: 1000,
+        payout: [2000],
+        ranking: [['m1']],
+        losers: [],
+        transferSource: 'custom',
+        transferAmount: 0,
+      },
+    ];
+    const settlement = makeSettlement({ members, rounds, treasurerId: 'm1' });
+    render(
+      <ResultCard
+        {...baseCardProps}
+        settlement={settlement}
+        results={[
+          makeResult('m1', { adjustment: -100, rounded: 3300, betDelta: 500 }),
+          makeResult('m2', { rounded: -1000, betDelta: -500 }),
+        ]}
+        totalImbalance={-500}
+        transfers={[{ from: 'm2', to: 'm1', amount: 3300 }]}
+      />,
+    );
+    const card = screen.getByTestId('result-card');
+    const colorUtilPattern =
+      /\b(?:bg|text|border|fill|stroke|ring|from|via|to)-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|black|white)(?:-\d{2,3})?\b/;
+
+    const offenders = [card, ...card.querySelectorAll('*')].filter((el) =>
+      colorUtilPattern.test(el.className.toString()),
+    );
+    expect(offenders).toEqual([]);
   });
 });
