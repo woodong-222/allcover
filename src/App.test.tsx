@@ -278,6 +278,56 @@ describe('App 스모크', () => {
     expect(rows().some((t) => t.includes('3,000원'))).toBe(false);
   });
 
+  /**
+   * calculate() 가 값을 내도 App 이 ResultCard 에 넘기지 않으면 화면에는 아무것도 안 뜬다.
+   * ResultCard 의 두 prop 이 기본값(0 / [])을 갖기 때문에 배선이 끊겨도 조용히 통과한다 —
+   * F1 의 원래 결함이 정확히 그 형태였다. 그래서 배선을 여기서 따로 고정한다.
+   */
+  it('F1: 올림 초과분이 생기면 결과 카드에 실제로 표시된다', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await addMembers(user, ['가', '나', '다', '라', '마']);
+    act(() => {
+      useSettlementStore.getState().setFees({ gameFeePerGame: 4000 });
+      useSettlementStore.getState().addRound();
+    });
+
+    const roundId = useSettlementStore.getState().settlement.rounds[0]!.id;
+    const ids = useSettlementStore.getState().settlement.members.map((m) => m.id);
+    act(() => {
+      useSettlementStore.getState().setMode('bet');
+      useSettlementStore.getState().setMethod(roundId, 'transfer');
+      // 이긴 쪽 2명분 8,000원을 진 쪽 3명이 나눈다 → 2,667원씩, 1원 더 걷힘
+      for (const id of ids.slice(2)) useSettlementStore.getState().toggleLoser(roundId, id);
+    });
+
+    const note = screen.getByTestId('rounding-surplus-note');
+    expect(note.textContent).toContain('1원');
+  });
+
+  it('F3: 분담 대상이 사라진 기타비용은 결과 카드에 경고로 뜬다', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await addMembers(user, ['가', '나']);
+    const ids = useSettlementStore.getState().settlement.members.map((m) => m.id);
+    act(() => {
+      useSettlementStore.getState().setFees({ gameFeePerGame: 4000 });
+      useSettlementStore.getState().addExtra({ label: '맥주', amount: 5000, splitAmong: [ids[1]!] });
+    });
+    expect(screen.queryByTestId('unassigned-extras-warning')).not.toBeInTheDocument();
+
+    // 유일한 분담 대상을 지우면 그 5,000원은 아무에게도 청구되지 않는다
+    act(() => {
+      useSettlementStore.getState().removeMember(ids[1]!);
+    });
+
+    const warn = screen.getByTestId('unassigned-extras-warning');
+    expect(warn.textContent).toContain('맥주');
+    expect(warn.textContent).toContain('5,000');
+  });
+
   it('새 정산을 눌러 세션을 비워도 요금 프리셋은 남는다', async () => {
     const user = userEvent.setup();
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);

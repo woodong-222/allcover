@@ -444,3 +444,74 @@ describe('ResultCard', () => {
     expect(offenders).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// F1 / F3 — 엔진이 계산한 경고가 실제로 화면에 도달하는지
+//
+// 이 두 블록은 한때 테스트가 0건이었다. 통째로 지워도 전체 스위트가 통과했는데,
+// 그게 정확히 F1 의 원래 결함("엔진은 계산하는데 화면에 안 나온다")과 같은 구멍이다.
+// ---------------------------------------------------------------------------
+/** settlement/results 까지 갖춘 완전한 props. 경고 블록만 바꿔가며 렌더할 때 쓴다. */
+function warningProps() {
+  const members = makeMembers(2);
+  return {
+    ...baseCardProps,
+    settlement: makeSettlement({ members }),
+    results: members.map((m) => makeResult(m.id)),
+  };
+}
+
+describe('ResultCard — 올림 초과분 표시 (F1)', () => {
+  it('초과분이 있으면 총액 아래에 금액과 함께 안내가 뜬다', () => {
+    render(<ResultCard {...warningProps()} roundingSurplus={2} />);
+    const note = screen.getByTestId('rounding-surplus-note');
+    expect(note).toBeInTheDocument();
+    expect(note.textContent).toContain('2원');
+  });
+
+  it('초과분이 0이면 아무것도 뜨지 않는다', () => {
+    render(<ResultCard {...warningProps()} roundingSurplus={0} />);
+    expect(screen.queryByTestId('rounding-surplus-note')).not.toBeInTheDocument();
+  });
+
+  it('prop 을 넘기지 않아도 크래시하지 않고 조용히 숨는다', () => {
+    render(<ResultCard {...warningProps()} />);
+    expect(screen.queryByTestId('rounding-surplus-note')).not.toBeInTheDocument();
+  });
+});
+
+describe('ResultCard — 분담 대상 없는 기타비용 경고 (F3)', () => {
+  it('미수금 항목이 있으면 항목명과 금액이 경고에 나온다', () => {
+    render(
+      <ResultCard
+        {...warningProps()}
+        unassignedExtras={[{ label: '맥주', amount: 5000 }]}
+      />,
+    );
+    const warn = screen.getByTestId('unassigned-extras-warning');
+    expect(warn).toBeInTheDocument();
+    expect(warn.textContent).toContain('맥주');
+    expect(warn.textContent).toContain('5,000');
+  });
+
+  it('여러 항목이면 전부 나열한다', () => {
+    render(
+      <ResultCard
+        {...warningProps()}
+        unassignedExtras={[
+          { label: '맥주', amount: 5000 },
+          { label: '주차비', amount: 3000 },
+        ]}
+      />,
+    );
+    const warn = screen.getByTestId('unassigned-extras-warning');
+    expect(warn.textContent).toContain('맥주');
+    expect(warn.textContent).toContain('주차비');
+    expect(warn.textContent).toContain('3,000');
+  });
+
+  it('미수금이 없으면 경고가 뜨지 않는다', () => {
+    render(<ResultCard {...warningProps()} unassignedExtras={[]} />);
+    expect(screen.queryByTestId('unassigned-extras-warning')).not.toBeInTheDocument();
+  });
+});

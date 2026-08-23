@@ -114,9 +114,11 @@ export default function App() {
       memberNames,
       results,
       total,
+      roundingSurplus,
+      unassignedExtras,
     });
     void copyText(text);
-  }, [settlement.members, settlement.date, results, total]);
+  }, [settlement.members, settlement.date, results, total, roundingSurplus, unassignedExtras]);
 
   const handleReset = useCallback(() => {
     if (window.confirm('지금 정산 내역을 지우고 새로 시작할까요? 요금 설정은 그대로 남습니다.')) {

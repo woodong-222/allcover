@@ -217,7 +217,18 @@ export const useSettlementStore = create<SettlementState>()(
                   ranking: original.ranking.map((g) => [...g]),
                   losers: [...original.losers],
                 }
-              : { method: 'none' as const, ante: 0, payout: [], ranking: [], losers: [] }),
+              : {
+                  method: 'none' as const,
+                  ante: 0,
+                  payout: [],
+                  ranking: [],
+                  losers: [],
+                  // transferSource/transferAmount 도 함께 초기화해야 addRound 와 같은 규칙이 된다.
+                  // 안 그러면 정산 모드에서 복제한 판에 "직접 입력 5,000원" 이 남아 있다가,
+                  // 내기 모드로 돌아와 "판비 내주기" 를 누르는 순간 입력한 적 없는 금액이 채워진다.
+                  transferSource: 'gameFee' as const,
+                  transferAmount: 0,
+                }),
           };
           const next = [...rounds];
           next.splice(idx + 1, 0, copy);

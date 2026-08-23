@@ -622,6 +622,12 @@ describe('duplicateRound — 정산 모드에서는 내기 필드를 복제하�
     s.setAnte(r1, 1000);
     s.tapRank(r1, memberId);
     s.setPayout(r1, [4000]);
+    // transferSource/transferAmount 를 기본값과 다르게 만들어야 초기화 여부를 검증할 수 있다.
+    // 기본값(gameFee / 0) 그대로 두면 초기화해도 값이 같아 테스트가 공허해진다.
+    s.setTransfer(r1, { transferSource: 'custom', transferAmount: 5000 });
+
+    // 복제 전 원본을 캡처해둔다 — 복제 후 rounds[0] 을 읽으면 대조가 무의미해진다.
+    const original = useSettlementStore.getState().settlement.rounds[0]!;
 
     // 정산 모드로 전환하면 내기 UI 는 숨겨지지만 "복제" 버튼은 남아 있다.
     // 사용자에게 그 버튼은 "같은 멤버로 한 판 더" 라는 뜻이다.
@@ -634,14 +640,19 @@ describe('duplicateRound — 정산 모드에서는 내기 필드를 복제하�
     expect(copy.payout).toEqual([]);
     expect(copy.ranking).toEqual([]);
     expect(copy.losers).toEqual([]);
-    // 참여자와 팀 편성은 모드와 무관하게 유용하므로 그대로 복제한다
-    expect(copy.participants).toEqual(copy.participants);
-    expect(copy.participants.length).toBeGreaterThan(0);
+    // transferSource/transferAmount 도 초기화된다 — addRound 와 같은 규칙이어야 한다 (N4).
+    // 남아 있으면 내기 모드 복귀 후 "판비 내주기" 를 누르는 순간 입력한 적 없는 금액이 채워진다.
+    expect(copy.transferSource).toBe('gameFee');
+    expect(copy.transferAmount).toBe(0);
+    // 참여자와 팀 편성은 모드와 무관하게 유용하므로 그대로 복제한다.
+    // 정산 모드에서 "복제" 의 유일한 존재 이유가 이것이므로 원본과 직접 대조해야 한다.
+    expect(copy.participants).toEqual(original.participants);
+    expect(copy.teams).toEqual(original.teams);
 
     // 원본은 그대로 남아야 한다 (비파괴)
-    const original = useSettlementStore.getState().settlement.rounds[0]!;
-    expect(original.method).toBe('pot');
-    expect(original.payout).toEqual([4000]);
+    const after = useSettlementStore.getState().settlement.rounds[0]!;
+    expect(after.method).toBe('pot');
+    expect(after.payout).toEqual([4000]);
   });
 
   it('내기 모드에서 복제한 판은 내기 필드를 그대로 가져온다', () => {

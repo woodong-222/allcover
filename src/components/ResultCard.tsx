@@ -238,14 +238,20 @@ export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function R
        * 나눗셈 한 번당 최대 (인원-1)원이라 보통 1~2원이다. 금액은 사소하지만,
        * "한 명만 1원 덜 내는 것보다 낫다"는 결정의 전제가 바로 이 노출이다 (F1).
        */}
-      {roundingSurplus !== 0 && (
+      {/*
+       * 가드가 `> 0` 인 이유: 이 값은 구조적으로 항상 0 이상이지만(초과분만 누적한다),
+       * `!== 0` 로 두고 절대값을 씌우면 훗날 음수가 되는 변경이 들어왔을 때 부호가 지워진 채
+       * "더 걷힙니다" 가 출력된다 — 모자란 돈을 더 걷혔다고 말하는 그럴듯한 거짓말이 된다.
+       * `> 0` 이면 그 경우 아무것도 안 뜨고, 절대값도 필요 없다.
+       */}
+      {roundingSurplus > 0 && (
         <p
           data-testid="rounding-surplus-note"
           className="mt-1 text-right text-xs"
           style={{ color: 'var(--card-muted)' }}
         >
-          인원수로 나누어떨어지지 않아 전원 같은 금액으로 올렸습니다 — 실제 결제액보다{' '}
-          {formatKRW(Math.abs(roundingSurplus))} 더 걷힙니다
+          인원수로 나누어떨어지지 않아 전원 같은 금액으로 올렸습니다 — 나눠 낸 금액이{' '}
+          {formatKRW(roundingSurplus)} 더 걷힙니다
         </p>
       )}
 
