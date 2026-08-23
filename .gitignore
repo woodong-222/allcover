@@ -11,3 +11,4 @@ dist
 .omc/handoffs/
 .omc/notepad.md
 .omc/project-memory.json
+.omc/sessions/
