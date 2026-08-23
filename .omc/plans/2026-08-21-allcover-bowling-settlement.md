@@ -333,11 +333,44 @@ export async function shareImage(blob: Blob, filename: string) {
 - `ResultCard`는 `normal` 모드에서 "내기±" 열과 판별 내기 요약(D7)을 숨긴다
 - 토글 위치는 헤더 — 판마다가 아니라 정산 전체에 걸리는 설정임이 드러나야 한다
 
+**신규 인수조건** (reviewer 설계검토 반영)
+- **G1**: `mode: 'normal'` 이면 내기가 입력된 라운드가 있어도 모든 `betDelta === 0`, `totalImbalance === 0`, **그리고 `breakdowns[].imbalance` 도 전부 0**
+  - *`breakdowns` 를 그대로 두고 `betDelta` 만 0으로 만들면 `ResultCard` 의 `roundImbalances.length > 0` 이 참이 되어 원인 힌트 블록이 렌더된다*
+- **G2**: `bet` → `normal` → `bet` 왕복 후 `ranking`/`payout`/`losers`/`teams` 가 전환 전과 `toEqual` 로 동일. **정산 모드에서 새로 추가한 라운드도 포함한다**
+  - *`addRound` 는 직전 판의 `method`/`ante`/`payout` 을 상속한다. 정산 모드에서 UI 가 숨겨져 있어도 상속은 계속 일어나므로, 정산 모드로 판을 5개 만들고 내기 모드로 돌아오면 **사용자가 만든 적 없는 판돈·배당이 붙은 판 5개**를 만난다. 정산 모드에서 만든 라운드는 내기 필드를 상속하지 않아야 한다*
+- **G3**: `normal` 모드에서 `RoundCard` 에 방식 세그먼트·판돈·순위·배당·진 쪽·팀 편성 UI가 렌더되지 않는다. `FeeSettings` 의 **기본 판돈(`defaultAnte`) 입력도 숨긴다** — 내기 전용 개념이다
+- **G4**: `normal` 모드에서 `ResultCard` 에 "내기±" 열과 판별 내기 요약(D7)이 없다
+- **G5**: `normal` 모드에서 `RoundCard` 에 불균형 경고(`role="alert"`)가 렌더되지 않는다
+  - *`RoundCard.tsx:54` 가 `calculate()` 를 거치지 않고 **`roundDelta` 를 직접 호출**해 자기 경고를 렌더한다. mode 게이트를 `calculate()` 안에만 넣으면 정산 모드에서도 빨간 "판돈 불일치" 경고가 그대로 뜬다. 게이트는 `roundDelta` 진입점이나 `RoundCard` 호출부에도 함께 걸어야 한다*
+- **G6**: `mode` 가 새로고침 후 유지된다. 구버전 저장값에서 복원했을 때의 기본값이 명시적으로 정의돼 있다
+
+### 5-A-3. 영속 스키마 마이그레이션 (착수 전 확정 — reviewer가 HIGH 로 지적)
+
+`roundingUnit` 삭제와 `mode` 추가는 **둘 다 영속 스키마 변경**이다. `partialize` 가 `settlement` 전체를 저장하고 zustand 의 기본 merge 는 최상위 shallow 라, 저장된 `settlement` 객체가 통째로 현재 값을 대체한다.
+
+**결정 1 — 버전을 올리고 진짜 마이그레이션을 쓴다.**
+
+| 갈래 | 결과 | 채택 |
+|---|---|---|
+| 버전 유지 | zustand 가 `migrate` 를 **호출조차 안 한다.** 구 payload 가 그대로 병합돼 `settlement.mode === undefined` | ✗ |
+| 버전만 올림 | 현재 `migrate` 는 마이그레이션이 아니라 **초기화**다. 버전이 다르면 무조건 백업 후 `createEmptySettlement` 반환 → **진행 중이던 정산이 전부 날아간다** | ✗ |
+| 버전 올림 + 진짜 v1→v2 `migrate` | `mode: 'bet'` 채우고 `roundingUnit` 제거, `members`/`rounds`/`extras` 는 보존 | **✓** |
+
+`CURRENT_VERSION` 을 2로 올리고 v1→v2 변환을 구현한다. 지금의 wipe 동작은 **"그 외 알 수 없는 버전"에만** 남긴다. 기존 `C3` 테스트(알 수 없는 버전 → 초기화)는 그대로 유효하다.
+
+**결정 2 — 판정식 극성은 `mode === 'normal' ? 0 : delta` 로 못 박는다.**
+
+같은 로직의 두 표현인데 `mode` 가 `undefined` 일 때 결과가 정반대다:
+- `mode === 'normal' ? 0 : delta` → `undefined` 는 내기 모드로 폴백 → **기존 계산이 그대로 보존된다** ✓
+- `mode === 'bet' ? delta : 0` → **기존 사용자 전원의 내기 금액이 업그레이드 순간 조용히 사라진다** ✗
+
+마이그레이션이 `mode` 를 채우므로 정상 경로에서는 `undefined` 가 안 나오지만, 마이그레이션이 실패하거나 우회되는 경로에서 **안전한 쪽으로 무너지도록** 극성을 고정한다.
+
 **신규 인수조건**
-- **G1**: `mode: 'normal'` 이면 내기가 입력된 라운드가 있어도 모든 `betDelta === 0`, `totalImbalance === 0`
-- **G2**: `bet` → `normal` → `bet` 왕복 후 `ranking`/`payout`/`losers`/`teams`가 전환 전과 `toEqual` 로 동일
-- **G3**: `normal` 모드에서 `RoundCard`에 방식 세그먼트·판돈·순위·배당 UI가 렌더되지 않는다
-- **G4**: `normal` 모드에서 `ResultCard`에 "내기±" 열과 판별 내기 요약이 없다
+- **G7**: v1 스키마 저장값(`mode` 없음, `roundingUnit` 있음)에서 복원하면 `members`/`rounds`/`extras` 가 보존되고 `mode === 'bet'` 이 채워진다
+- **G8**: `mode` 가 `undefined` 인 라운드셋에서 `calculate()` 가 내기 금액을 0으로 만들지 않는다 (극성 회귀 방지)
+
+*이는 1차 리뷰 finding #5(봉투만 검증하고 payload 는 검증 안 함)와 같은 뿌리다. 그때는 "앱이 스스로 만들 수 없는 상태"라 LOW 였는데, **5-A 가 바로 그 상태를 만드는 변경이다.** #5 는 2026-08-21 에 수정 완료됐다.*
 
 ## 6. 검증 절차
 

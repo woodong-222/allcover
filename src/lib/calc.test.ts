@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { calculate, roundDelta } from './calc';
 import { formatKRW, formatSigned } from './format';
-import type { Extra, Member, Round, Settlement } from '../types';
+import type { Extra, Member, Round, Settlement, SettlementMode } from '../types';
 
 // ---------------------------------------------------------------------------
 // 테스트 픽스처 헬퍼
@@ -33,10 +33,9 @@ function mkSettlement(patch: Partial<Settlement> & { members: Member[] }): Settl
     gameFeePerGame: 4000,
     shoeFee: 2000,
     shoeRenters: [],
-    defaultAnte: 1000,
     rounds: [],
     extras: [],
-    roundingUnit: 100,
+    mode: 'bet',
     ...patch,
   };
 }
@@ -286,7 +285,6 @@ describe('R13: 금액이 소수점으로 새지 않는다', () => {
       members: members('a', 'b', 'c', 'd', 'e'),
       gameFeePerGame: 4000,
       shoeFee: 0,
-      roundingUnit: 100,
       rounds: [
         mkRound({
           id: 'r1',
@@ -322,7 +320,6 @@ describe('R13: 금액이 소수점으로 새지 않는다', () => {
       members: members('a', 'b', 'c', 'd', 'e'),
       gameFeePerGame: 4000,
       shoeFee: 0,
-      roundingUnit: 100,
       rounds: [
         mkRound({
           id: 'r1',
@@ -584,7 +581,7 @@ describe('기타비용 분담', () => {
   it("A11: splitAmong 'all' 12,000원 / 5명 / 반올림 100원 → 각 2,400원, 오차 0", () => {
     const ms = members('a', 'b', 'c', 'd', 'e');
     const extras: Extra[] = [{ id: 'e1', label: '음료', amount: 12000, splitAmong: 'all' }];
-    const s = mkSettlement({ members: ms, roundingUnit: 100, extras });
+    const s = mkSettlement({ members: ms, extras });
     const r = byId(s);
     for (const m of ms) expect(r.of(m.id).extra).toBe(2400);
     expect(sum(r.results.map((x) => x.extra))).toBe(12000);
@@ -608,7 +605,6 @@ describe('기타비용 분담', () => {
     const ms = members('a', 'b', 'c');
     const s = mkSettlement({
       members: ms,
-      roundingUnit: 100,
       extras: [{ id: 'e1', label: '치킨', amount: 10000, splitAmong: 'all' }],
     });
     const r = byId(s);
@@ -618,24 +614,20 @@ describe('기타비용 분담', () => {
     expect(sum(r.results.map((x) => x.rounded))).toBe(10000);
   });
 
-  it('R13: roundingUnit 0/10/100 어느 경우에도 기타비용 분담이 정수다', () => {
-    for (const unit of [0, 10, 100] as const) {
-      const s = mkSettlement({
-        members: members('a', 'b', 'c'),
-        roundingUnit: unit,
-        extras: [{ id: 'e1', label: '치킨', amount: 10000, splitAmong: 'all' }],
-      });
-      const r = byId(s);
-      for (const row of r.results) {
-        expect(Number.isInteger(row.extra)).toBe(true);
-        expect(Number.isInteger(row.rounded)).toBe(true);
-        expect(Number.isInteger(row.adjustment)).toBe(true);
-        expect(formatKRW(row.extra)).not.toContain('.');
-      }
-      expect(sum(r.results.map((x) => x.extra))).toBe(10000);
-      // 반올림 단위와 무관하게 항목 총액은 그대로 보존된다
-      expect(sum(r.results.map((x) => x.rounded))).toBe(10000);
+  it("B5'/B6': 나누어떨어지지 않는 기타비용도 전 항목이 정수이고 표시에 소수점이 없다", () => {
+    const s = mkSettlement({
+      members: members('a', 'b', 'c'),
+      extras: [{ id: 'e1', label: '치킨', amount: 10000, splitAmong: 'all' }],
+    });
+    const r = byId(s);
+    for (const row of r.results) {
+      expect(Number.isInteger(row.extra)).toBe(true);
+      expect(Number.isInteger(row.rounded)).toBe(true);
+      expect(Number.isInteger(row.adjustment)).toBe(true);
+      expect(formatKRW(row.extra)).not.toContain('.');
     }
+    expect(sum(r.results.map((x) => x.extra))).toBe(10000);
+    expect(sum(r.results.map((x) => x.rounded))).toBe(10000);
   });
 
   it('R13: 여러 금액 × 인원 조합에서 기타비용 항목 총액이 정확히 보존된다', () => {
@@ -645,7 +637,6 @@ describe('기타비용 분담', () => {
       for (const amount of [10000, 12000, 7777, 1, 99999]) {
         const s = mkSettlement({
           members: members(...ids.slice(0, count)),
-          roundingUnit: 100,
           extras: [{ id: 'e1', label: 'x', amount, splitAmong: 'all' }],
         });
         const r = byId(s);
@@ -662,7 +653,6 @@ describe('기타비용 분담', () => {
   it('기타비용 여러 건이 겹쳐도 각 항목 총액이 보존된다', () => {
     const s = mkSettlement({
       members: members('a', 'b', 'c'),
-      roundingUnit: 100,
       extras: [
         { id: 'e1', label: '치킨', amount: 10000, splitAmong: 'all' },
         { id: 'e2', label: '맥주', amount: 5000, splitAmong: ['a', 'b'] },
@@ -782,16 +772,13 @@ function makeSettlement(rng: Rng, methods?: Round['method'][]): Settlement {
     amount: randInt(rng, 1, 10) * 1000,
     splitAmong: rng() < 0.5 ? 'all' : shuffled(rng, ids).slice(0, randInt(rng, 1, n)),
   }));
-  const treasurer = rng() < 0.5 ? pick(rng, ids) : undefined;
   return mkSettlement({
     members: ms,
     gameFeePerGame: randInt(rng, 6, 10) * 500,
     shoeFee: randInt(rng, 0, 4) * 500,
     shoeRenters: shuffled(rng, ids).slice(0, randInt(rng, 0, n)),
-    roundingUnit: pick<Settlement['roundingUnit']>(rng, [0, 10, 100]),
     rounds: roundMethods.map((m, i) => makeRound(rng, `r${i}`, ids, m)),
     extras,
-    treasurerId: treasurer,
   });
 }
 
@@ -855,7 +842,6 @@ describe('불변식 — 고정 시드 랜덤', () => {
       gameFeePerGame: 4000,
       shoeFee: 2000,
       shoeRenters: ['a'],
-      roundingUnit: 0,
       rounds: [
         // 1판 pot: 4명, ante 1,000, 1등 4,000 → a -3,000 / 나머지 +1,000
         mkRound({
@@ -920,38 +906,41 @@ describe('불변식 — 고정 시드 랜덤', () => {
 // ---------------------------------------------------------------------------
 
 describe('calculate — 반올림 통합', () => {
-  it('B1: 총무가 지정되면 잔돈을 총무가 흡수하고 합계가 보존된다', () => {
+  it("B1': 나누어떨어지지 않는 기타비용도 합계가 정확히 보존된다", () => {
     const ms = members('a', 'b', 'c');
     const s = mkSettlement({
       members: ms,
       gameFeePerGame: 0,
       shoeFee: 0,
-      roundingUnit: 100,
-      treasurerId: 'a',
       extras: [{ id: 'e1', label: '음료', amount: 10000, splitAmong: 'all' }],
     });
     const r = byId(s);
-    expect(sum(r.results.map((x) => x.rounded))).toBeCloseTo(10000, 6);
-    expect(r.of('a').rounded).toBeGreaterThan(r.of('b').rounded);
+    expect(sum(r.results.map((x) => x.rounded))).toBe(10000);
+    // splitEvenly 가 앞사람부터 1원씩 얹으므로 a 가 1원 더 낸다
+    expect(r.of('a').rounded).toBe(3334);
+    expect(r.of('b').rounded).toBe(3333);
+    expect(r.of('c').rounded).toBe(3333);
   });
 
-  it('B3: 총무 미지정이면 최대 부담자가 잔돈을 흡수한다', () => {
+  it('B3: 입력이 정수면 잔돈 조정이 아예 발생하지 않는다 (배지가 뜨면 안 된다)', () => {
     const s = mkSettlement({
       members: members('a', 'b', 'c'),
       gameFeePerGame: 1250,
       shoeFee: 0,
-      roundingUnit: 100,
       rounds: [
         mkRound({ id: 'r1', participants: ['a', 'b', 'c'] }),
         mkRound({ id: 'r2', participants: ['a'] }),
       ],
     });
     const r = byId(s);
-    // subtotal: a 2,500 / b 1,250 / c 1,250 → 합 5,000
+    // subtotal: a 2,500 / b 1,250 / c 1,250 → 합 5,000. 1원 올림은 여기서 no-op 이다.
     expect(r.of('a').subtotal).toBe(2500);
     expect(sum(r.results.map((x) => x.rounded))).toBe(5000);
-    const absorber = r.results.find((x) => x.adjustment !== 0 && x.memberId === 'a');
-    expect(absorber).toBeDefined();
+    // 1.8e-12 같은 sub-원 잔여가 아니라 정확히 0 이어야 `adjustment !== 0` 배지 판정이 의미를 갖는다
+    for (const row of r.results) {
+      expect(row.adjustment).toBe(0);
+      expect(row.rounded).toBe(row.subtotal);
+    }
   });
 
   it('B4: 내기로 이득 본 사람의 최종 금액은 음수로 유지된다', () => {
@@ -959,7 +948,6 @@ describe('calculate — 반올림 통합', () => {
       members: members('a', 'b', 'c'),
       gameFeePerGame: 1000,
       shoeFee: 0,
-      roundingUnit: 100,
       rounds: [
         mkRound({
           id: 'r1',
@@ -976,5 +964,198 @@ describe('calculate — 반올림 통합', () => {
     expect(r.of('a').rounded).toBe(-9000); // 게임비 1,000 - 10,000
     expect(r.of('a').rounded).toBeLessThan(0);
     expect(sum(r.results.map((x) => x.rounded))).toBe(3000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 5-A-2 / 5-A-3 — 정산 모드 게이트 (G1, G2, G8) 및 표시 정수성 (B6')
+// ---------------------------------------------------------------------------
+
+/**
+ * 내기가 잔뜩 입력된 3판 시나리오.
+ * r3 은 일부러 배당(10,000)이 판돈(4,000)을 초과해 `imbalance === +6000` 이다.
+ * 이게 없으면 G1 의 `breakdowns[].imbalance === 0` 검사가 공허해진다.
+ */
+function betScenario(mode: SettlementMode): Settlement {
+  return mkSettlement({
+    members: members('a', 'b', 'c', 'd'),
+    gameFeePerGame: 4000,
+    shoeFee: 2000,
+    shoeRenters: ['a'],
+    mode,
+    rounds: [
+      mkRound({
+        id: 'r1',
+        participants: ['a', 'b', 'c', 'd'],
+        method: 'pot',
+        ante: 1000,
+        payout: [4000],
+        ranking: [['a']],
+      }),
+      mkRound({
+        id: 'r2',
+        participants: ['a', 'b', 'c', 'd'],
+        teams: [
+          ['a', 'b'],
+          ['c', 'd'],
+        ],
+        method: 'transfer',
+        losers: ['c', 'd'],
+        transferSource: 'gameFee',
+      }),
+      mkRound({
+        id: 'r3',
+        participants: ['a', 'b', 'c', 'd'],
+        method: 'pot',
+        ante: 1000,
+        payout: [10000],
+        ranking: [['b']],
+      }),
+    ],
+  });
+}
+
+describe('정산 모드 / 내기 모드 게이트', () => {
+  it('내기 모드에서는 기존 계산이 그대로다 (대조군)', () => {
+    const r = byId(betScenario('bet'));
+    expect(r.of('a').betDelta).toBe(-6000);
+    expect(r.of('b').betDelta).toBe(-12000);
+    expect(r.of('c').betDelta).toBe(6000);
+    expect(r.of('d').betDelta).toBe(6000);
+    expect(r.breakdowns.map((b) => b.imbalance)).toEqual([0, 0, 6000]);
+    expect(r.totalImbalance).toBe(6000);
+  });
+
+  it('G1: 정산 모드면 내기 입력이 남아 있어도 betDelta·totalImbalance·breakdowns[].imbalance 가 전부 0', () => {
+    const r = byId(betScenario('normal'));
+
+    for (const row of r.results) expect(row.betDelta).toBe(0);
+    expect(sum(r.results.map((x) => x.betDelta))).toBe(0);
+    expect(r.totalImbalance).toBe(0);
+    // breakdowns 를 안 막으면 ResultCard 의 원인 힌트 블록이 정산 모드에서도 뜬다
+    expect(r.breakdowns.map((b) => b.imbalance)).toEqual([0, 0, 0]);
+    for (const b of r.breakdowns) {
+      expect(Object.values(b.delta).every((d) => d === 0)).toBe(true);
+    }
+  });
+
+  it('G1: 정산 모드에서도 gameCount·gameFee·신발비는 그대로 센다', () => {
+    const r = byId(betScenario('normal'));
+    for (const row of r.results) {
+      expect(row.gameCount).toBe(3);
+      expect(row.gameFee).toBe(12000);
+    }
+    expect(r.of('a').shoe).toBe(2000);
+    expect(sum(r.results.map((x) => x.rounded))).toBe(50000); // 게임비 48,000 + 신발비 2,000
+  });
+
+  it('G5: roundDelta 를 직접 호출해도 정산 모드면 경고가 뜰 근거가 없다 (delta·imbalance 0)', () => {
+    const s = betScenario('normal');
+    for (const round of s.rounds) {
+      const b = roundDelta(round, s.gameFeePerGame, 'normal');
+      expect(b.imbalance).toBe(0);
+      expect(Object.values(b.delta).every((d) => d === 0)).toBe(true);
+    }
+    // 같은 라운드를 내기 모드로 부르면 r3 는 여전히 불균형이다
+    expect(roundDelta(s.rounds[2], s.gameFeePerGame, 'bet').imbalance).toBe(6000);
+  });
+
+  it('G2: calculate() 는 라운드의 내기 입력을 변형하지 않는다 (비파괴 전환)', () => {
+    const s = betScenario('normal');
+    const before = JSON.parse(JSON.stringify(s.rounds));
+
+    calculate(s);
+    calculate({ ...s, mode: 'bet' });
+    calculate(s);
+
+    expect(s.rounds).toEqual(before);
+    for (const round of s.rounds) {
+      expect(round.ranking).toEqual(before[s.rounds.indexOf(round)].ranking);
+    }
+    // 모드를 되돌리면 계산 결과도 그대로 살아난다
+    const back = byId({ ...s, mode: 'bet' });
+    expect(back.of('a').betDelta).toBe(-6000);
+    expect(back.totalImbalance).toBe(6000);
+  });
+
+  it("G8: mode 가 undefined 인 구버전 데이터에서 내기 금액이 사라지지 않는다 (극성 회귀 방지)", () => {
+    // `mode === 'bet' ? delta : 0` 으로 극성을 뒤집으면 여기서 전부 0 이 된다
+    const legacy: Settlement = {
+      ...betScenario('bet'),
+      mode: undefined as unknown as SettlementMode,
+    };
+    const r = byId(legacy);
+
+    expect(r.of('a').betDelta).toBe(-6000);
+    expect(r.of('b').betDelta).toBe(-12000);
+    expect(r.totalImbalance).toBe(6000);
+    expect(r.results.some((x) => x.betDelta !== 0)).toBe(true);
+  });
+
+  it("G8: 알 수 없는 mode 값도 내기 모드로 폴백한다 (극성 회귀 방지 — 기본 인자로는 못 잡는 경로)", () => {
+    // `mode: undefined` 는 roundDelta 의 기본 인자 `= 'bet'` 이 먼저 막아버려서
+    // 극성이 뒤집혀도 통과한다. 손상된 저장값이 'bet'/'normal' 이 아닌 문자열을 담고 있으면
+    // 기본 인자가 안 먹으므로 판정식의 극성이 그대로 드러난다.
+    const corrupted: Settlement = {
+      ...betScenario('bet'),
+      mode: 'legacy-v1' as unknown as SettlementMode,
+    };
+    const r = byId(corrupted);
+    expect(r.of('a').betDelta).toBe(-6000);
+    expect(r.of('b').betDelta).toBe(-12000);
+    expect(r.totalImbalance).toBe(6000);
+
+    // roundDelta 직접 호출도 동일하게 안전한 쪽으로 무너져야 한다
+    const b = roundDelta(corrupted.rounds[0], corrupted.gameFeePerGame, 'legacy-v1' as unknown as SettlementMode);
+    expect(b.delta.a).toBe(-3000);
+  });
+
+  it('G8: roundDelta 도 mode 인자를 생략하면 내기 모드로 폴백한다', () => {
+    const s = betScenario('bet');
+    expect(roundDelta(s.rounds[0], s.gameFeePerGame).delta.a).toBe(-3000);
+    expect(roundDelta(s.rounds[0], s.gameFeePerGame, undefined).delta.a).toBe(-3000);
+  });
+
+  it("B6': 두 모드 모두 표시 문자열에 소수점이 없다", () => {
+    for (const mode of ['bet', 'normal'] as const) {
+      const r = byId(betScenario(mode));
+      for (const row of r.results) {
+        expect(formatKRW(row.rounded)).not.toContain('.');
+        expect(formatSigned(row.betDelta)).not.toContain('.');
+        expect(formatSigned(row.adjustment)).not.toContain('.');
+        expect(Number.isInteger(row.rounded)).toBe(true);
+        expect(Number.isInteger(row.betDelta)).toBe(true);
+        expect(Number.isInteger(row.adjustment)).toBe(true);
+      }
+    }
+  });
+
+  it("B6': 나누어떨어지지 않는 판비 + 기타비용이 섞여도 표시에 소수점이 없다", () => {
+    // reviewer 실측 사례와 같은 형태: 6명 + 나누어떨어지지 않는 기타비용
+    const s = mkSettlement({
+      members: members('a', 'b', 'c', 'd', 'e', 'f'),
+      gameFeePerGame: 4000,
+      shoeFee: 2000,
+      shoeRenters: ['a', 'c'],
+      extras: [{ id: 'e1', label: '뒤풀이', amount: 13000, splitAmong: 'all' }],
+      rounds: [
+        mkRound({
+          id: 'r1',
+          participants: ['a', 'b', 'c', 'd', 'e', 'f'],
+          method: 'transfer',
+          losers: ['d', 'e', 'f'],
+          transferSource: 'gameFee',
+        }),
+      ],
+    });
+    const r = byId(s);
+    for (const row of r.results) {
+      expect(formatKRW(row.rounded)).not.toContain('.');
+      expect(formatSigned(row.betDelta)).not.toContain('.');
+      expect(formatSigned(row.adjustment)).not.toContain('.');
+      expect(formatKRW(row.extra)).not.toContain('.');
+      expect(row.adjustment).toBe(0); // "잔돈 조정 +0원" 배지가 뜨면 안 된다
+    }
+    expect(sum(r.results.map((x) => x.extra))).toBe(13000);
   });
 });

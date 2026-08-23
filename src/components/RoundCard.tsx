@@ -41,6 +41,7 @@ export type RoundCardProps = {
 export function RoundCard({ round, index }: RoundCardProps) {
   const members = useSettlementStore((s) => s.settlement.members);
   const gameFeePerGame = useSettlementStore((s) => s.settlement.gameFeePerGame);
+  const mode = useSettlementStore((s) => s.settlement.mode);
   const duplicateRound = useSettlementStore((s) => s.duplicateRound);
   const removeRound = useSettlementStore((s) => s.removeRound);
   const toggleParticipant = useSettlementStore((s) => s.toggleParticipant);
@@ -51,7 +52,10 @@ export function RoundCard({ round, index }: RoundCardProps) {
 
   const [teamSheetOpen, setTeamSheetOpen] = useState(false);
 
-  const { imbalance } = roundDelta(round, gameFeePerGame);
+  // 정산 모드에서는 내기 UI를 통째로 숨긴다 (G3). 라운드 데이터는 지우지 않고 렌더만 건너뛴다 —
+  // 잘못 눌렀을 때 순위·배당이 날아가면 복구할 방법이 없기 때문이다 (계획서 §5-A-2).
+  const showBetUI = mode !== 'normal';
+  const { imbalance } = roundDelta(round, gameFeePerGame, mode);
   const nameOf = (id: string): string => members.find((m) => m.id === id)?.name ?? '?';
   const teams = round.teams?.filter((t) => t.length > 0) ?? null;
   const teamSummary = round.teams
@@ -80,7 +84,7 @@ export function RoundCard({ round, index }: RoundCardProps) {
         </div>
       </header>
 
-      {imbalance !== 0 && (
+      {showBetUI && imbalance !== 0 && (
         <p
           role="alert"
           className="rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-800"
@@ -114,6 +118,7 @@ export function RoundCard({ round, index }: RoundCardProps) {
         )}
       </fieldset>
 
+      {showBetUI && (
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-medium text-slate-700">팀 편성</span>
         <span className="text-sm text-slate-700">{teamSummary}</span>
@@ -125,7 +130,9 @@ export function RoundCard({ round, index }: RoundCardProps) {
           팀 편성 변경
         </button>
       </div>
+      )}
 
+      {showBetUI && (
       <fieldset className="flex flex-col gap-2 border-0 p-0">
         <legend className="text-sm font-medium text-slate-700">내기 방식</legend>
         <div className={CHIP_LIST}>
@@ -146,8 +153,9 @@ export function RoundCard({ round, index }: RoundCardProps) {
           ))}
         </div>
       </fieldset>
+      )}
 
-      {round.method === 'pot' && (
+      {showBetUI && round.method === 'pot' && (
         <div className="flex flex-col gap-4">
           <NumberField
             label="인당 판돈"
@@ -160,7 +168,7 @@ export function RoundCard({ round, index }: RoundCardProps) {
         </div>
       )}
 
-      {round.method === 'transfer' && (
+      {showBetUI && round.method === 'transfer' && (
         <div className="flex flex-col gap-4">
           <fieldset className="flex flex-col gap-2 border-0 p-0">
             <legend className="text-sm font-medium text-slate-700">금액</legend>
@@ -242,7 +250,7 @@ export function RoundCard({ round, index }: RoundCardProps) {
       <TeamSheet
         round={round}
         members={members}
-        open={teamSheetOpen}
+        open={showBetUI && teamSheetOpen}
         onClose={() => setTeamSheetOpen(false)}
       />
     </article>

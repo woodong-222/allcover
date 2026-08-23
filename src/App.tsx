@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useSettlementStore } from './store/useSettlementStore';
 import { calculate } from './lib/calc';
-import { settleTransfers } from './lib/settle';
 import { createCapturer } from './lib/capture';
 import { shareImage, downloadBlob, copyText, type ShareOutcome } from './lib/share';
 import { buildSummaryText } from './lib/summaryText';
@@ -21,6 +20,7 @@ const CAPTURE_DEBOUNCE_MS = 400;
 export default function App() {
   const settlement = useSettlementStore((s) => s.settlement);
   const resetSession = useSettlementStore((s) => s.resetSession);
+  const setMode = useSettlementStore((s) => s.setMode);
 
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -49,12 +49,7 @@ export default function App() {
     [settlement]
   );
 
-  const transfers = useMemo(
-    () => settleTransfers(results, settlement.members, settlement.treasurerId),
-    [results, settlement.members, settlement.treasurerId]
-  );
-
-  /** 그날 실제 결제 총액. 송금 목록 합계와는 다르다 — 총무 미지정 모드는 전액을 상계하지 못한다. */
+  /** 그날 실제 결제 총액 */
   const total = useMemo(() => results.reduce((sum, r) => sum + r.rounded, 0), [results]);
 
   const hasMembers = settlement.members.length > 0;
@@ -94,7 +89,7 @@ export default function App() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [hasMembers, results, breakdowns, transfers, totalImbalance, settlement]);
+  }, [hasMembers, results, breakdowns, totalImbalance, settlement]);
 
   const filename = useMemo(() => todayFilename('allcover'), []);
 
@@ -114,18 +109,14 @@ export default function App() {
 
   const handleCopyText = useCallback(() => {
     const memberNames = Object.fromEntries(settlement.members.map((m) => [m.id, m.name]));
-    const treasurerName = settlement.treasurerId
-      ? memberNames[settlement.treasurerId]
-      : undefined;
     const text = buildSummaryText({
       date: settlement.date,
       memberNames,
       results,
-      treasurerName,
       total,
     });
     void copyText(text);
-  }, [settlement.members, settlement.treasurerId, settlement.date, results, total]);
+  }, [settlement.members, settlement.date, results, total]);
 
   const handleReset = useCallback(() => {
     if (window.confirm('지금 정산 내역을 지우고 새로 시작할까요? 요금 설정은 그대로 남습니다.')) {
@@ -136,15 +127,51 @@ export default function App() {
   return (
     <div className="min-h-full">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <h1 className="text-lg font-bold text-slate-900">🎳 allcover</h1>
-          <button
-            type="button"
-            onClick={handleReset}
-            className="min-h-11 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700"
-          >
-            새 정산
-          </button>
+
+          <div className="flex items-center gap-2">
+            {/*
+              모드는 판마다가 아니라 정산 전체에 걸리는 설정이라 헤더에 둔다.
+              전환은 비파괴적이다 — 정산 모드로 바꿔도 입력해둔 순위·배당은 지워지지 않고
+              계산에서만 빠진다. 잘못 눌렀을 때 되돌릴 수 없으면 안 되기 때문이다.
+            */}
+            <div
+              role="radiogroup"
+              aria-label="정산 방식"
+              className="flex rounded-lg border border-slate-300 p-0.5"
+            >
+              {(
+                [
+                  ['normal', '정산'],
+                  ['bet', '내기'],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={settlement.mode === value}
+                  onClick={() => setMode(value)}
+                  className={`min-h-11 rounded-md px-4 text-sm font-medium ${
+                    settlement.mode === value
+                      ? 'bg-slate-900 text-white'
+                      : 'text-slate-700'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={handleReset}
+              className="min-h-11 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700"
+            >
+              새 정산
+            </button>
+          </div>
         </div>
       </header>
 
@@ -181,7 +208,6 @@ export default function App() {
                   results={results}
                   breakdowns={breakdowns}
                   totalImbalance={totalImbalance}
-                  transfers={transfers}
                 />
               </div>
             </>

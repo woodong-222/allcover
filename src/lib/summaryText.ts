@@ -1,6 +1,9 @@
 /**
  * 카카오톡 등에 붙여넣을 플레인 텍스트 정산 요약.
  * 계획서: .omc/plans/2026-08-21-allcover-bowling-settlement.md §3 인수조건 D7
+ *
+ * 총무/송금 안내 줄은 2026-08-21 사용자 요청으로 제거됐다 (types.ts의
+ * Settlement.treasurerId 제거 주석 참고). "누가 얼마"와 총액만 보여준다.
  */
 
 import type { MemberResult } from '../types';
@@ -12,8 +15,6 @@ export type BuildSummaryTextArgs = {
   /** memberId -> 이름 */
   memberNames: Record<string, string>;
   results: MemberResult[];
-  /** 총무 이름. 없으면 마지막 안내 줄을 생략한다 */
-  treasurerName?: string;
   /** 총액 (원) */
   total: number;
 };
@@ -26,11 +27,9 @@ export type BuildSummaryTextArgs = {
  * 김철수  16,000원
  * 이영희  14,000원
  * 박민수  12,000원
- *
- * → 모두 김철수에게 보내주세요
  */
 export function buildSummaryText(args: BuildSummaryTextArgs): string {
-  const { date, memberNames, results, treasurerName, total } = args;
+  const { date, memberNames, results, total } = args;
 
   const lines: string[] = [];
   lines.push(`🎳 allcover 정산 · ${formatDate(date)}`);
@@ -40,11 +39,6 @@ export function buildSummaryText(args: BuildSummaryTextArgs): string {
   for (const result of results) {
     const name = memberNames[result.memberId] ?? result.memberId;
     lines.push(`${name}  ${formatKRW(result.rounded)}`);
-  }
-
-  if (treasurerName) {
-    lines.push('');
-    lines.push(`→ 모두 ${treasurerName}에게 보내주세요`);
   }
 
   return lines.join('\n');

@@ -1,6 +1,15 @@
 /**
  * 결과 카드 — 캡처(html-to-image) 대상 컴포넌트.
  * 계획서: .omc/plans/2026-08-21-allcover-bowling-settlement.md §3 인수조건 D5, D7, B3 / §5 R1, R9
+ * §5-A-2 G4: `settlement.mode === 'normal'`(정산 모드)이면 "내기±" 열과 판별 내기 요약(D7)을 숨긴다.
+ *
+ * 극성 주의: `mode === 'normal'` 일 때만 숨기고, 그 외(= 'bet' 이거나 구버전 저장값처럼
+ * mode 가 없는 경우)는 그대로 보여준다. 반대로 `mode === 'bet'` 일 때만 보여주는 식으로 쓰면
+ * mode 가 undefined 인 낡은 데이터에서 내기 정보가 조용히 사라진다 (계획서 §5-A-3와 같은 함정).
+ *
+ * 총무/송금 안내는 2026-08-21 사용자 요청으로 제거됐다. 볼링장에서는 누가 카드로 긁었는지
+ * 다들 아는데 앱이 굳이 지정을 받을 이유가 없다는 판단. 결과 카드는 "누가 얼마"와 총액만
+ * 보여준다 (types.ts의 Settlement.treasurerId 제거 주석 참고).
  *
  * R1: 이 컴포넌트(및 하위 요소) 안에서 쓰는 모든 색은 src/index.css 의 hex CSS 변수
  * (--card-bg, --card-fg, --card-muted, --card-border, --card-accent, --card-accent-soft,
@@ -13,14 +22,13 @@
  * captureNode/createCapturer 로 "미리" 캡처해둔다. 그래서 이 컴포넌트는 순수 표시용이며
  * 캡처 트리거를 스스로 갖지 않는다.
  *
- * 결합도를 낮추기 위해 계산 결과(results/breakdowns/totalImbalance/transfers)는 전부
- * props 로 받는다. src/lib/calc.ts, settle.ts 를 이 컴포넌트가 직접 import 하지 않는다.
+ * 결합도를 낮추기 위해 계산 결과(results/breakdowns/totalImbalance)는 전부
+ * props 로 받는다. src/lib/calc.ts 를 이 컴포넌트가 직접 import 하지 않는다.
  */
 
 import { forwardRef } from 'react';
 import type { Member, MemberResult, Round, RoundBreakdown, Settlement } from '../types';
 import { formatDate, formatKRW, formatSigned } from '../lib/format';
-import { TransferList, type Transfer } from './TransferList';
 
 /** R9: 13명 이상이면 행 높이·폰트를 축소해 카드가 지나치게 길어지지 않게 한다 */
 const COMPACT_THRESHOLD = 13;
@@ -30,7 +38,6 @@ export type ResultCardProps = {
   results: MemberResult[];
   breakdowns: RoundBreakdown[];
   totalImbalance: number;
-  transfers: Transfer[];
 };
 
 /** memberId -> 이름 조회. 못 찾으면 id 그대로 표시(크래시 방지) */
@@ -73,13 +80,15 @@ function describeRoundBet(
 }
 
 export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function ResultCard(
-  { settlement, results, breakdowns, totalImbalance, transfers },
+  { settlement, results, breakdowns, totalImbalance },
   ref,
 ) {
-  const { date, title, members, rounds, gameFeePerGame, treasurerId } = settlement;
+  const { date, title, members, rounds, gameFeePerGame, mode } = settlement;
   const names = nameLookup(members);
   const nameOf = (id: string) => names[id] ?? id;
   const total = results.reduce((sum, r) => sum + r.rounded, 0);
+  // G4: 정산 모드에서만 숨긴다. mode 가 'bet'이든 undefined(구버전 데이터)든 그대로 보여준다.
+  const hideBet = mode === 'normal';
 
   const roundImbalances = breakdowns.filter((b) => b.imbalance !== 0);
   const compact = members.length >= COMPACT_THRESHOLD;
@@ -105,7 +114,6 @@ export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function R
         </p>
         <p className="mt-1 text-sm" style={{ color: 'var(--card-muted)' }}>
           {formatDate(date)} · {members.length}명
-          {treasurerId && ` · 총무 ${nameOf(treasurerId)}`}
         </p>
       </header>
 
@@ -151,7 +159,7 @@ export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function R
             <th className="py-1 text-right font-normal">게임비</th>
             <th className="py-1 text-right font-normal">신발</th>
             <th className="py-1 text-right font-normal">기타</th>
-            <th className="py-1 text-right font-normal">내기±</th>
+            {!hideBet && <th className="py-1 text-right font-normal">내기±</th>}
             <th className="py-1 text-right font-normal">최종</th>
           </tr>
         </thead>
@@ -178,12 +186,14 @@ export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function R
               <td className={`${cellPad} text-right`}>{formatKRW(r.gameFee)}</td>
               <td className={`${cellPad} text-right`}>{formatKRW(r.shoe)}</td>
               <td className={`${cellPad} text-right`}>{formatKRW(r.extra)}</td>
-              <td
-                className={`${cellPad} text-right`}
-                style={{ color: r.betDelta > 0 ? 'var(--card-positive)' : r.betDelta < 0 ? 'var(--card-negative)' : undefined }}
-              >
-                {formatSigned(r.betDelta)}
-              </td>
+              {!hideBet && (
+                <td
+                  className={`${cellPad} text-right`}
+                  style={{ color: r.betDelta > 0 ? 'var(--card-positive)' : r.betDelta < 0 ? 'var(--card-negative)' : undefined }}
+                >
+                  {formatSigned(r.betDelta)}
+                </td>
+              )}
               <td className={`${cellPad} text-right font-semibold`}>
                 {r.rounded < 0 ? `${formatKRW(Math.abs(r.rounded))} 받음` : formatKRW(r.rounded)}
               </td>
@@ -201,13 +211,8 @@ export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function R
         <span className="text-lg font-bold">{formatKRW(total)}</span>
       </div>
 
-      {/* 송금 리스트 */}
-      <div className="mt-4">
-        <TransferList transfers={transfers} memberNames={names} treasurerId={treasurerId} />
-      </div>
-
-      {/* 판별 내기 요약 (D7) */}
-      {rounds.length > 0 && (
+      {/* 판별 내기 요약 (D7) — 정산 모드에서는 숨긴다 (G4) */}
+      {!hideBet && rounds.length > 0 && (
         <div className="mt-4">
           <p className="mb-2 text-sm font-semibold" style={{ color: 'var(--card-muted)' }}>
             판별 내기 요약

@@ -63,12 +63,11 @@ describe('a11y: 키보드 Tab 순회 (E4)', () => {
     const user = userEvent.setup();
     render(<App />);
 
-    // 화면 순서(§4 M3): 멤버 → 요금 → 판. 각 지점에 순서대로 도달하는지 확인한다.
+    // 화면 순서(§4 M3): 멤버 → 요금 → 판. "기본 판돈"·"총무"는 types.ts에서 완전히
+    // 삭제된 필드라(2026-08-21) FeeSettings에 더 이상 렌더되지 않는다 — 이 걷기 대상에서 뺐다.
     await tabUntil(user, () => screen.getByLabelText('멤버 이름'));
     await tabUntil(user, () => screen.getByLabelText('게임 단가'));
     await tabUntil(user, () => screen.getByLabelText('신발비'));
-    await tabUntil(user, () => screen.getByLabelText('기본 판돈'));
-    await tabUntil(user, () => screen.getByLabelText('총무'));
     await tabUntil(user, () => screen.getByRole('button', { name: '판 추가' }));
 
     // 판을 추가하면 아직 참여자가 없는 판이 만들어지는데, 이는 판 결과 계산 자체를 막지 않는다

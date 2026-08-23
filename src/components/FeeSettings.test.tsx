@@ -11,9 +11,9 @@ beforeEach(() => {
 });
 
 describe('FeeSettings', () => {
-  it('E3: 게임 단가/신발비/기본 판돈 입력이 label로 연결되고 numeric 키패드를 쓴다 (E4 전제조건, 실제 Tab 순회 검증은 a11y.test.tsx)', () => {
+  it('E3: 게임 단가/신발비 입력이 label로 연결되고 numeric 키패드를 쓴다 (E4 전제조건, 실제 Tab 순회 검증은 a11y.test.tsx)', () => {
     render(<FeeSettings />);
-    for (const label of ['게임 단가', '신발비', '기본 판돈']) {
+    for (const label of ['게임 단가', '신발비']) {
       const input = screen.getByLabelText(label);
       expect(input).toBeInTheDocument();
       expect(input).toHaveAttribute('inputMode', 'numeric');
@@ -29,30 +29,29 @@ describe('FeeSettings', () => {
     expect(useSettlementStore.getState().settlement.gameFeePerGame).toBe(4000);
   });
 
-  it('반올림 단위를 선택하면 스토어에 반영된다', async () => {
+  it('신발비를 입력하면 스토어에 반영된다', async () => {
     const user = userEvent.setup();
     render(<FeeSettings />);
 
-    await user.click(screen.getByRole('button', { name: '100원' }));
+    await user.type(screen.getByLabelText('신발비'), '2000');
 
-    expect(useSettlementStore.getState().settlement.roundingUnit).toBe(100);
-    expect(screen.getByRole('button', { name: '100원' })).toHaveAttribute('aria-pressed', 'true');
+    expect(useSettlementStore.getState().settlement.shoeFee).toBe(2000);
   });
 
-  it('총무 미선택 시 안내 문구가 노출된다', () => {
+  it('§5-A-1: 반올림은 항상 1원 단위 올림으로 고정되어 반올림 단위 선택 UI가 더 이상 렌더되지 않는다', () => {
     render(<FeeSettings />);
-    expect(screen.getByText('잔액은 각자 카운터 결제')).toBeInTheDocument();
+
+    expect(screen.queryByText('반올림 단위')).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: '반올림 단위' })).not.toBeInTheDocument();
+    for (const label of ['0원', '10원', '100원']) {
+      expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
+    }
   });
 
-  it('총무를 선택하면 안내 문구가 사라진다', async () => {
-    useSettlementStore.getState().addMember('철수');
-    const user = userEvent.setup();
+  it('defaultAnte·treasurerId는 types.ts에서 삭제됐다 — "기본 판돈"·"총무" 필드가 렌더되지 않는다', () => {
     render(<FeeSettings />);
 
-    const treasurerId = useSettlementStore.getState().settlement.members[0].id;
-    await user.selectOptions(screen.getByLabelText('총무'), treasurerId);
-
-    expect(useSettlementStore.getState().settlement.treasurerId).toBe(treasurerId);
-    expect(screen.queryByText('잔액은 각자 카운터 결제')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('기본 판돈')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('총무')).not.toBeInTheDocument();
   });
 });

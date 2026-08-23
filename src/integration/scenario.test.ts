@@ -2,14 +2,13 @@
  * 통합 시나리오 테스트 — 계획서 §6-5의 수동 E2E 시나리오를 자동화한다.
  * 계획서: .omc/plans/2026-08-21-allcover-bowling-settlement.md §6-5
  *
- * 목적: store 액션 → calc → settle 을 관통하는 검증. 상태는 반드시 스토어 액션으로만 만든다.
+ * 목적: store 액션 → calc 를 관통하는 검증. 상태는 반드시 스토어 액션으로만 만든다.
  * 이 파일은 검증만 하며 lib/store 구현은 건드리지 않는다.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useSettlementStore } from '../store/useSettlementStore';
 import { initialPrefs, usePrefsStore } from '../store/usePrefsStore';
 import { calculate, roundDelta } from '../lib/calc';
-import { settleTransfers } from '../lib/settle';
 import type { MemberResult, Settlement } from '../types';
 
 const SESSION_KEY = 'allcover:session:v1';
@@ -33,7 +32,7 @@ function resultOf(results: MemberResult[], memberId: string): MemberResult {
  */
 function buildScenario() {
   const s = store();
-  s.setFees({ gameFeePerGame: 4000, shoeFee: 2000, defaultAnte: 1000, roundingUnit: 100 });
+  s.setFees({ gameFeePerGame: 4000, shoeFee: 2000 });
   for (const name of ['가', '나', '다', '라', '마', '바', '사', '아']) s.addMember(name);
 
   const ids = current().members.map((m) => m.id);
@@ -89,9 +88,6 @@ function buildScenario() {
   store().setMethod(r5, 'none');
   for (const id of [m4, m5, m6, m7]) store().toggleParticipant(r5, id);
 
-  // 총무 지정
-  store().setTreasurer(m0);
-
   return { ids, m0, m1, m2, m3, m4, m5, m6, m7, r1, r2, r3, r4, r5 };
 }
 
@@ -101,7 +97,7 @@ beforeEach(() => {
   store().resetSession();
 });
 
-describe('통합 시나리오 — 계획서 §6-5 (8명 / 5판 / 총무 지정)', () => {
+describe('통합 시나리오 — 계획서 §6-5 (8명 / 5판)', () => {
   it('시나리오가 스토어 액션만으로 계획서대로 구성된다 (셋업 자체 검증)', () => {
     const { ids, m0, m4 } = buildScenario();
     const s = current();
@@ -110,8 +106,7 @@ describe('통합 시나리오 — 계획서 §6-5 (8명 / 5판 / 총무 지정)'
     expect(s.gameFeePerGame).toBe(4000);
     expect(s.shoeFee).toBe(2000);
     expect(s.shoeRenters).toHaveLength(3);
-    expect(s.roundingUnit).toBe(100);
-    expect(s.treasurerId).toBe(m0);
+    expect(s.mode).toBe('bet');
     expect(s.rounds).toHaveLength(5);
 
     const [p1, p2, p3, p4, p5] = s.rounds;
@@ -236,73 +231,26 @@ describe('통합 시나리오 — 계획서 §6-5 (8명 / 5판 / 총무 지정)'
     }
   });
 
-  it('6. 송금 균형(총무 모드): 총무 순수령액 === 나머지 인원 rounded 합', () => {
-    const { m0 } = buildScenario();
-    const s = current();
-    const { results } = calculate(s);
-    const transfers = settleTransfers(results, s.members, s.treasurerId);
-
-    const expected = sum(results.filter((r) => r.memberId !== m0).map((r) => r.rounded));
-    const inflow = sum(transfers.filter((t) => t.to === m0).map((t) => t.amount));
-    const outflow = sum(transfers.filter((t) => t.from === m0).map((t) => t.amount));
-
-    expect(inflow - outflow).toBe(expected);
-    expect(expected).toBe(144000);
-    expect(transfers).toHaveLength(7); // 총무 본인 제외 7명
-    expect(transfers.every((t) => t.to === m0 && t.from !== m0)).toBe(true);
-  });
-
-  it('7. 총무 미지정 모드: 이 시나리오는 전원 채무자라 상계할 채권자가 없어 송금이 0건이다', () => {
+  // 총무 지정과 송금 목록(settle.ts / TransferList)은 2026-08-21 에 제거됐다.
+  // 그 검증이 빠진 자리를 총액 정합성이 대신한다 — 송금이 없어진 지금은 이게 유일한 방어선이다.
+  it('6. 총액 정합성: Σ rounded === Σ subtotal 이고 모든 금액이 정수다', () => {
     buildScenario();
-    const s = current();
-    const { results } = calculate(s);
+    const { results } = calculate(current());
 
-    // 내기로 크게 이득 본 가(-16,000)조차 게임비·신발비가 더 커서 최종 부담은 +6,000 이다.
-    expect(results.every((r) => r.rounded > 0)).toBe(true);
-
-    const transfers = settleTransfers(results, s.members);
-    expect(transfers).toEqual([]);
+    expect(sum(results.map((r) => r.rounded))).toBe(sum(results.map((r) => r.subtotal)));
+    for (const r of results) {
+      expect(Number.isInteger(r.rounded)).toBe(true);
+      expect(Number.isInteger(r.betDelta)).toBe(true);
+      expect(Number.isInteger(r.adjustment)).toBe(true);
+    }
   });
 
-  it('7. 총무 미지정 모드: 채권자가 생기면 그리디 불변식이 성립한다 (6판 추가로 채권자 발생)', () => {
-    const { m0 } = buildScenario();
-    store().setTreasurer(undefined);
+  it('7. 이 시나리오는 전원이 순채무자다 — 내기 이득보다 게임비가 크다', () => {
+    buildScenario();
+    const { results } = calculate(current());
 
-    // 판돈을 크게 건 6판을 추가해 1등(가)을 순채권자로 만든다.
-    // addRound 는 직전 판(5판)의 참여자를 상속하므로 이 판의 참여자는 4명, pot 은 5,000×4 = 20,000 이다.
-    store().addRound();
-    const r6 = current().rounds[5].id;
-    store().setTeams(r6, null);
-    store().setMethod(r6, 'pot');
-    store().setAnte(r6, 5000);
-    store().setPayout(r6, [20000]);
-    store().tapRank(r6, m0);
-
-    expect(current().rounds[5].participants).toHaveLength(4);
-
-    const s = current();
-    const { results, totalImbalance } = calculate(s);
-    expect(totalImbalance).toBe(0);
-    expect(resultOf(results, m0).rounded).toBeLessThan(0); // 채권자 확보
-
-    const transfers = settleTransfers(results, s.members);
-    const debt = sum(results.filter((r) => r.rounded > 0).map((r) => r.rounded));
-    const credit = sum(results.filter((r) => r.rounded < 0).map((r) => -r.rounded));
-
-    // Σ송금 === min(총채무, 총채권)
-    expect(sum(transfers.map((t) => t.amount))).toBe(Math.min(debt, credit));
-
-    for (const r of results) {
-      const paid = sum(transfers.filter((t) => t.from === r.memberId).map((t) => t.amount));
-      const got = sum(transfers.filter((t) => t.to === r.memberId).map((t) => t.amount));
-      if (r.rounded < 0) {
-        expect(got - paid).toBe(-r.rounded); // 채권자는 정확히 받을 만큼 받는다
-      } else {
-        expect(paid).toBeLessThanOrEqual(r.rounded); // 채무자는 rounded 이하만 송금한다
-        expect(got).toBe(0);
-      }
-    }
-    expect(transfers.every((t) => t.amount > 0 && t.from !== t.to)).toBe(true);
+    // 내기로 가장 크게 이득 본 가(betDelta -16,000)조차 게임비·신발비가 더 커서 최종 부담은 +6,000 이다.
+    expect(results.every((r) => r.rounded > 0)).toBe(true);
   });
 
   it('8. 영속성 왕복: localStorage 복원 후 calculate() 결과가 완전히 동일하다', async () => {

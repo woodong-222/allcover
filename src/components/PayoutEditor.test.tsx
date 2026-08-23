@@ -12,7 +12,14 @@ const MEMBERS = [
   { id: 'c', name: '다라' },
   { id: 'd', name: '라마' },
   { id: 'e', name: '마바' },
+  { id: 'f', name: '바사' },
+  { id: 'g', name: '사아' },
+  { id: 'h', name: '아자' },
+  { id: 'i', name: '자차' },
+  { id: 'j', name: '차카' },
 ];
+
+const ALL_IDS = MEMBERS.map((m) => m.id);
 
 function makeRound(patch: Partial<Round> = {}): Round {
   return {
@@ -35,15 +42,13 @@ function seed(round: Round): void {
     version: 1,
     id: 's1',
     date: '2026-08-21T00:00:00.000Z',
+    mode: 'bet',
     members: MEMBERS,
     gameFeePerGame: 4000,
     shoeFee: 2000,
     shoeRenters: [],
-    defaultAnte: 1000,
     rounds: [round],
     extras: [],
-    treasurerId: undefined,
-    roundingUnit: 100,
   };
   useSettlementStore.setState({ settlement });
 }
@@ -181,6 +186,124 @@ describe('PayoutEditor', () => {
       const button = screen.getByRole('button', { name });
       expect(button.className).toMatch(/min-h-\[44px\]/);
       expect(button.className).toMatch(/min-w-\[44px\]/);
+    }
+  });
+});
+
+/**
+ * finding #3 회귀 방지.
+ * 프리셋과 자동 분배가 소수 payout을 만들면 (a) 결과 카드·공유 이미지에 소수가 찍히고
+ * (b) NumberField가 소수점을 제거해 금액이 100배로 튀며 (c) (pot/n)*n !== pot 인 인원수에서
+ * imbalance에 부동소수 먼지가 남아 "0원 어긋남"이라는 무의미한 경고가 뜬다.
+ */
+describe('PayoutEditor — 배당액 정수 보장 (finding #3)', () => {
+  /** n1:n2:n3 팀 구성으로 참여자와 순위를 만든다. ranking은 팀 그대로 */
+  function teamRound(groupSizes: number[], ante: number, payout: number[]): Round {
+    const teams: string[][] = [];
+    let cursor = 0;
+    for (const n of groupSizes) {
+      teams.push(ALL_IDS.slice(cursor, cursor + n));
+      cursor += n;
+    }
+    return makeRound({
+      participants: ALL_IDS.slice(0, cursor),
+      teams,
+      ranking: teams,
+      ante,
+      payout,
+    });
+  }
+
+  it('7명 3팀(3/2/2) 승자독식 → payout 전원 정수이고 imbalance가 정확히 0', async () => {
+    // pot 7,000을 3명 그룹에 균등 배분하면 2333.333…이 된다. 예전 구현이 이 값을 그대로 넣었다.
+    seed(teamRound([3, 2, 2], 1000, [0, 0, 0]));
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    await user.click(screen.getByRole('button', { name: '승자독식' }));
+
+    const payout = currentRound().payout;
+    expect(payout.every((p) => Number.isInteger(p))).toBe(true);
+    expect(payout.every((p) => p >= 0)).toBe(true);
+    expect(roundDelta(currentRound(), 4000).imbalance).toBe(0);
+  });
+
+  it('7명 3팀(3/2/2)에서 자동 분배 후 imbalance가 정확히 0이고 payout이 정수', async () => {
+    // 내림한 1등 배당만 들어간 상태(잔액 1원). 1원은 어느 그룹 인원수로도 안 나뉜다.
+    seed(teamRound([3, 2, 2], 1000, [2333, 0, 0]));
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    await user.click(screen.getByRole('button', { name: '나머지 자동 분배' }));
+
+    const payout = currentRound().payout;
+    expect(payout.every((p) => Number.isInteger(p))).toBe(true);
+    expect(payout.every((p) => p >= 0)).toBe(true);
+    expect(roundDelta(currentRound(), 4000).imbalance).toBe(0);
+  });
+
+  it('참여 9명 ante 100, 7명 그룹 + 2명 그룹 → 자동 분배 후 imbalance가 정확히 0', async () => {
+    seed(teamRound([7, 2], 100, [100, 0]));
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    await user.click(screen.getByRole('button', { name: '나머지 자동 분배' }));
+
+    const payout = currentRound().payout;
+    expect(payout.every((p) => Number.isInteger(p))).toBe(true);
+    expect(roundDelta(currentRound(), 4000).imbalance).toBe(0);
+    expect(screen.getByText('남은 판돈 0원')).toBeInTheDocument();
+  });
+
+  it('정수 해가 없는 판에서도 소수를 만들지 않고 잔액을 정수로 남긴다', async () => {
+    // 참여 9명 ante 100 → pot 900, 등수 그룹이 7명 하나뿐. 900 % 7 === 4 이므로
+    // 7·p === 900 인 정수 p가 존재하지 않는다. 소수로 맞추면 imbalance에 1.1e-13이 남는다.
+    seed(
+      makeRound({
+        participants: ALL_IDS.slice(0, 9),
+        teams: [ALL_IDS.slice(0, 7)],
+        ranking: [ALL_IDS.slice(0, 7)],
+        ante: 100,
+        payout: [0],
+      }),
+    );
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    await user.click(screen.getByRole('button', { name: '나머지 자동 분배' }));
+
+    const payout = currentRound().payout;
+    const { imbalance } = roundDelta(currentRound(), 4000);
+    expect(payout.every((p) => Number.isInteger(p))).toBe(true);
+    // 남은 금액은 부동소수 먼지가 아니라 사람이 읽을 수 있는 정수여야 한다.
+    expect(Number.isInteger(imbalance)).toBe(true);
+    expect(imbalance).toBe(-4);
+    expect(screen.getByText('남은 판돈 4원 남음')).toBeInTheDocument();
+    // 더 줄일 수 없으므로 버튼은 비활성이 된다 (눌러도 안 바뀌는 버튼을 남기지 않는다)
+    expect(screen.getByRole('button', { name: '나머지 자동 분배' })).toBeDisabled();
+  });
+
+  it('프리셋 2종 × 그룹 인원 1~5 조합 전부에서 payout이 정수이고 음수가 없다', async () => {
+    const user = userEvent.setup();
+    for (const n1 of [1, 2, 3, 4, 5]) {
+      for (const n2 of [1, 2, 3, 4, 5]) {
+        for (const preset of ['승자독식', '1·2등 차등']) {
+          seed(teamRound([n1, n2], 1000, [0, 0]));
+          const view = render(<Harness />);
+
+          await user.click(screen.getByRole('button', { name: preset }));
+
+          const payout = currentRound().payout;
+          const label = `${preset} ${n1}:${n2}`;
+          expect(payout.every((p) => Number.isInteger(p)), `${label} 정수`).toBe(true);
+          expect(payout.every((p) => p >= 0), `${label} 음수 없음`).toBe(true);
+          expect(
+            Number.isInteger(roundDelta(currentRound(), 4000).imbalance),
+            `${label} imbalance 정수`,
+          ).toBe(true);
+          view.unmount();
+        }
+      }
     }
   });
 });

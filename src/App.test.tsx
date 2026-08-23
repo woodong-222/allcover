@@ -2,7 +2,7 @@
  * 앱 전체가 함께 렌더되는지 확인하는 스모크 테스트.
  *
  * 개별 컴포넌트/라이브러리는 각자 단위 테스트가 있지만, 이 파일은
- * "스토어 액션 -> calculate -> settleTransfers -> ResultCard 표시"가
+ * "스토어 액션 -> calculate -> ResultCard 표시"가
  * 실제로 하나로 이어지는지를 본다. App.tsx 배선이 끊기면 여기서 잡힌다.
  *
  * html-to-image 는 jsdom 에서 실제 렌더가 불가능하므로 모킹한다.
@@ -38,8 +38,6 @@ describe('App 스모크', () => {
     usePrefsStore.setState({
       gameFeePerGame: 0,
       shoeFee: 0,
-      defaultAnte: 0,
-      roundingUnit: 100,
       recentMemberNames: [],
     });
   });
@@ -69,7 +67,7 @@ describe('App 스모크', () => {
     // imbalance 계산이 조용히 달라진다 (worker-calc 경고 지점).
     // React 밖에서 스토어를 건드리므로 act 로 감싸야 리렌더가 flush 된다.
     act(() => {
-      useSettlementStore.getState().setFees({ gameFeePerGame: 4000, roundingUnit: 100 });
+      useSettlementStore.getState().setFees({ gameFeePerGame: 4000 });
       useSettlementStore.getState().addRound();
       useSettlementStore.getState().addRound();
     });
@@ -80,24 +78,21 @@ describe('App 스모크', () => {
     expect(within(card).getByText(/16,000원/)).toBeInTheDocument();
   });
 
-  it('총무를 지정하면 송금 목록에서 잔액 안내 문구가 사라진다', async () => {
+  // 총무 지정과 송금 목록은 2026-08-21 에 제거됐다. 결과 카드는 "누가 얼마" 와 총액만 보여준다.
+  // 회귀로 다시 들어오는 걸 막기 위해 부재를 고정한다.
+  it('송금 안내와 총무 관련 표시가 결과 카드에 없다', async () => {
     const user = userEvent.setup();
     render(<App />);
 
     await addMembers(user, ['가', '나']);
     act(() => {
-      useSettlementStore.getState().setFees({ gameFeePerGame: 4000, roundingUnit: 100 });
+      useSettlementStore.getState().setFees({ gameFeePerGame: 4000 });
       useSettlementStore.getState().addRound();
     });
 
-    expect(screen.getByTestId('greedy-remainder-note')).toBeInTheDocument();
-
-    const treasurerId = useSettlementStore.getState().settlement.members[0]?.id;
-    act(() => {
-      useSettlementStore.getState().setTreasurer(treasurerId);
-    });
-
     expect(screen.queryByTestId('greedy-remainder-note')).not.toBeInTheDocument();
+    expect(screen.queryByText(/총무/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/보내주세요/)).not.toBeInTheDocument();
   });
 
   /**
@@ -175,7 +170,7 @@ describe('App 스모크', () => {
 
       await addMembers(user, ['가']);
       act(() => {
-        useSettlementStore.getState().setFees({ gameFeePerGame: 4000, roundingUnit: 100 });
+        useSettlementStore.getState().setFees({ gameFeePerGame: 4000 });
         useSettlementStore.getState().addRound();
       });
 
@@ -210,6 +205,79 @@ describe('App 스모크', () => {
     });
   });
 
+  /**
+   * 모드 전환은 **비파괴적**이어야 한다. 정산 모드로 바꿔도 입력해둔 순위·배당은
+   * 남아 있고 계산에서만 빠진다. 잘못 눌렀을 때 되돌릴 수 없으면 안 되기 때문이다.
+   */
+  it('G2: 모드를 왕복해도 입력해둔 내기 데이터가 지워지지 않는다', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await addMembers(user, ['가', '나']);
+    act(() => {
+      useSettlementStore.getState().setFees({ gameFeePerGame: 4000 });
+      useSettlementStore.getState().addRound();
+    });
+
+    const roundId = useSettlementStore.getState().settlement.rounds[0]!.id;
+    const memberId = useSettlementStore.getState().settlement.members[0]!.id;
+    act(() => {
+      useSettlementStore.getState().setMethod(roundId, 'pot');
+      useSettlementStore.getState().setAnte(roundId, 1000);
+      useSettlementStore.getState().tapRank(roundId, memberId);
+      useSettlementStore.getState().setPayout(roundId, [2000]);
+    });
+
+    const before = useSettlementStore.getState().settlement.rounds[0]!;
+
+    await user.click(screen.getByRole('radio', { name: '정산' }));
+    await user.click(screen.getByRole('radio', { name: '내기' }));
+
+    const after = useSettlementStore.getState().settlement.rounds[0]!;
+    expect(after.ranking).toEqual(before.ranking);
+    expect(after.payout).toEqual(before.payout);
+    expect(after.ante).toBe(before.ante);
+    expect(after.method).toBe(before.method);
+  });
+
+  it('G1: 정산 모드에서는 내기 금액이 결과에 반영되지 않는다', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await addMembers(user, ['가', '나']);
+    act(() => {
+      useSettlementStore.getState().setFees({ gameFeePerGame: 4000 });
+      useSettlementStore.getState().addRound();
+    });
+
+    const roundId = useSettlementStore.getState().settlement.rounds[0]!.id;
+    const memberId = useSettlementStore.getState().settlement.members[0]!.id;
+    act(() => {
+      useSettlementStore.getState().setMethod(roundId, 'pot');
+      useSettlementStore.getState().setAnte(roundId, 1000);
+      useSettlementStore.getState().tapRank(roundId, memberId);
+      useSettlementStore.getState().setPayout(roundId, [2000]);
+    });
+
+    // 내기는 제로섬이라 **총액은 두 모드에서 8,000원으로 같다**. 달라지는 건 개인 부담이다.
+    // 총액으로 판정하면 어느 모드에서도 통과해 아무것도 검증하지 못한다.
+    const card = screen.getByTestId('result-card');
+    const rows = () =>
+      within(card)
+        .getAllByTestId('result-row')
+        .map((row) => row.textContent ?? '');
+
+    // 내기 모드: 1등이 배당 2,000을 받고 판돈 1,000을 냈으므로 3,000 / 5,000 으로 갈린다
+    await user.click(screen.getByRole('radio', { name: '내기' }));
+    expect(rows().some((t) => t.includes('3,000원'))).toBe(true);
+    expect(rows().some((t) => t.includes('5,000원'))).toBe(true);
+
+    // 정산 모드: 내기가 빠져 둘 다 게임비 4,000원씩만 부담한다
+    await user.click(screen.getByRole('radio', { name: '정산' }));
+    expect(rows().every((t) => t.includes('4,000원'))).toBe(true);
+    expect(rows().some((t) => t.includes('3,000원'))).toBe(false);
+  });
+
   it('새 정산을 눌러 세션을 비워도 요금 프리셋은 남는다', async () => {
     const user = userEvent.setup();
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
@@ -217,7 +285,7 @@ describe('App 스모크', () => {
 
     await addMembers(user, ['가']);
     act(() => {
-      useSettlementStore.getState().setFees({ gameFeePerGame: 4000, roundingUnit: 100 });
+      useSettlementStore.getState().setFees({ gameFeePerGame: 4000 });
     });
 
     await user.click(screen.getByRole('button', { name: '새 정산' }));

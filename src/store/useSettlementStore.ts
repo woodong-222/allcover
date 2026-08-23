@@ -7,27 +7,30 @@
 import { nanoid } from 'nanoid';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { BetMethod, Extra, Member, Round, Settlement } from '../types';
+import type { BetMethod, Extra, Member, Round, Settlement, SettlementMode } from '../types';
 import { createGuardedStorage, backupCorruptState } from './persistGuard';
 import { initialPrefs, usePrefsStore, type Prefs, type PrefsFees } from './usePrefsStore';
 
 const STORAGE_KEY = 'allcover:session:v1';
-const CURRENT_VERSION = 1;
+/**
+ * v2: `roundingUnit` 삭제(1원 올림으로 고정, 계획서 §5-A-1), `mode` 추가(§5-A-2).
+ * v1 -> v2는 실제 마이그레이션을 쓴다 — 버전만 올리고 무조건 초기화하면 진행 중인
+ * 정산이 전부 날아간다 (계획서 §5-A-3). "그 외 알 수 없는 버전"만 백업 후 초기화한다.
+ */
+const CURRENT_VERSION = 2;
 
-function createEmptySettlement(prefs: Pick<Prefs, 'gameFeePerGame' | 'shoeFee' | 'defaultAnte' | 'roundingUnit'>): Settlement {
+function createEmptySettlement(prefs: Pick<Prefs, 'gameFeePerGame' | 'shoeFee' | 'mode'>): Settlement {
   return {
     version: CURRENT_VERSION,
     id: nanoid(),
     date: new Date().toISOString(),
+    mode: prefs.mode,
     members: [],
     gameFeePerGame: prefs.gameFeePerGame,
     shoeFee: prefs.shoeFee,
     shoeRenters: [],
-    defaultAnte: prefs.defaultAnte,
     rounds: [],
     extras: [],
-    treasurerId: undefined,
-    roundingUnit: prefs.roundingUnit,
   };
 }
 
@@ -42,6 +45,22 @@ function isValidSettlementState(state: unknown): boolean {
   if (typeof settlement !== 'object' || settlement === null) return false;
   const s = settlement as Record<string, unknown>;
   return Array.isArray(s.members) && Array.isArray(s.rounds) && Array.isArray(s.extras);
+}
+
+/**
+ * 입력 경계에서 금액을 정수 원 단위로 강제한다 (계획서 §5-A-1 "결정 C").
+ *
+ * **`money.roundTo`(Math.ceil, 계산 출력 반올림 정책)와는 의도적으로 다르다** — 절대 통일하지 마라.
+ * - 여기(입력 정규화)는 `Math.round`: 사용자가 친 값에 가장 가까운 정수를 잡는다. `4000.4` -> `4000`.
+ * - `money.roundTo`(계산 출력)는 `Math.ceil` 1원 올림: 총액 보존을 위해 항상 위로만 올린다.
+ * 입력을 여기서 정수로 못박아 두면 `subtotal`이 이미 전부 정수라 `roundTo`는 사실상 방어용 no-op으로만
+ * 남는다 — 진짜 목적(소수점 없는 화면)은 이 경계에서 달성된다.
+ *
+ * `NumberField`가 UI 레이어에서도 이미 정수화하지만, 테스트/마이그레이션은 UI를 우회해
+ * 스토어에 직접 값을 넣으므로 **여기가 진짜 경계**다.
+ */
+function toWon(n: number): number {
+  return Number.isFinite(n) ? Math.round(n) : 0;
 }
 
 /** 그룹(개인 또는 팀) 두 개가 같은 멤버 집합인지 비교. tapRank의 재탭 판별에 쓴다 */
@@ -91,10 +110,11 @@ type SettlementState = {
   toggleShoeRenter: (memberId: string) => void;
   addExtra: (extra: Omit<Extra, 'id'>) => void;
   removeExtra: (extraId: string) => void;
-  setTreasurer: (memberId: string | undefined) => void;
   setFees: (fees: Partial<PrefsFees>) => void;
+  /** 정산 전체에 걸리는 모드 전환. 비파괴적 — 라운드의 method/ante/payout/ranking/losers/teams는 지우지 않는다 */
+  setMode: (mode: SettlementMode) => void;
 
-  /** 세션만 초기화. 요금 프리셋과 최근 멤버 이름은 유지된다 (C5) */
+  /** 세션만 초기화. 요금 프리셋·최근 멤버 이름·모드는 유지된다 (C5) */
   resetSession: () => void;
 };
 
@@ -132,8 +152,7 @@ export const useSettlementStore = create<SettlementState>()(
             splitAmong:
               e.splitAmong === 'all' ? ('all' as const) : e.splitAmong.filter((id) => id !== memberId),
           }));
-          const treasurerId = settlement.treasurerId === memberId ? undefined : settlement.treasurerId;
-          return { settlement: { ...settlement, members, rounds, shoeRenters, extras, treasurerId } };
+          return { settlement: { ...settlement, members, rounds, shoeRenters, extras } };
         });
       },
 
@@ -154,13 +173,19 @@ export const useSettlementStore = create<SettlementState>()(
         set((state) => {
           const settlement = state.settlement;
           const last = settlement.rounds[settlement.rounds.length - 1];
+          // 정산 모드에서는 내기 필드를 상속하지 않는다 (G2). UI가 숨겨져 있어도 상속이
+          // 계속되면, 정산 모드로 판을 여러 개 만들고 내기 모드로 돌아왔을 때 사용자가
+          // 만든 적 없는 판돈·배당이 붙은 판들을 만나게 된다. participants/teams는
+          // 모드와 무관하게 유용하므로 계속 상속한다.
+          const inheritBetFields = settlement.mode !== 'normal';
           const newRound: Round = {
             id: nanoid(),
             participants: last ? [...last.participants] : settlement.members.map((m) => m.id),
             teams: last ? (last.teams ? last.teams.map((t) => [...t]) : null) : null,
-            method: last ? last.method : 'none',
-            ante: last ? last.ante : settlement.defaultAnte,
-            payout: last ? [...last.payout] : [],
+            method: inheritBetFields && last ? last.method : 'none',
+            // 첫 판의 ante는 0에서 시작해 사용자가 그 판에서 직접 입력한다 (defaultAnte 제거, 2026-08-21)
+            ante: inheritBetFields && last ? last.ante : 0,
+            payout: inheritBetFields && last ? [...last.payout] : [],
             ranking: [],
             losers: [],
             transferSource: 'gameFee',
@@ -245,7 +270,7 @@ export const useSettlementStore = create<SettlementState>()(
         set((state) => ({
           settlement: {
             ...state.settlement,
-            rounds: mapRounds(state.settlement, roundId, (r) => ({ ...r, ante })),
+            rounds: mapRounds(state.settlement, roundId, (r) => ({ ...r, ante: toWon(ante) })),
           },
         }));
       },
@@ -254,7 +279,10 @@ export const useSettlementStore = create<SettlementState>()(
         set((state) => ({
           settlement: {
             ...state.settlement,
-            rounds: mapRounds(state.settlement, roundId, (r) => ({ ...r, payout: [...payout] })),
+            rounds: mapRounds(state.settlement, roundId, (r) => ({
+              ...r,
+              payout: payout.map(toWon),
+            })),
           },
         }));
       },
@@ -294,10 +322,12 @@ export const useSettlementStore = create<SettlementState>()(
       },
 
       setTransfer: (roundId, patch) => {
+        const normalized =
+          patch.transferAmount === undefined ? patch : { ...patch, transferAmount: toWon(patch.transferAmount) };
         set((state) => ({
           settlement: {
             ...state.settlement,
-            rounds: mapRounds(state.settlement, roundId, (r) => ({ ...r, ...patch })),
+            rounds: mapRounds(state.settlement, roundId, (r) => ({ ...r, ...normalized })),
           },
         }));
       },
@@ -315,7 +345,7 @@ export const useSettlementStore = create<SettlementState>()(
         set((state) => ({
           settlement: {
             ...state.settlement,
-            extras: [...state.settlement.extras, { ...extra, id: nanoid() }],
+            extras: [...state.settlement.extras, { ...extra, amount: toWon(extra.amount), id: nanoid() }],
           },
         }));
       },
@@ -329,13 +359,20 @@ export const useSettlementStore = create<SettlementState>()(
         }));
       },
 
-      setTreasurer: (memberId) => {
-        set((state) => ({ settlement: { ...state.settlement, treasurerId: memberId } }));
+      setFees: (fees) => {
+        const normalized: Partial<PrefsFees> = {
+          ...fees,
+          ...(fees.gameFeePerGame !== undefined && { gameFeePerGame: toWon(fees.gameFeePerGame) }),
+          ...(fees.shoeFee !== undefined && { shoeFee: toWon(fees.shoeFee) }),
+        };
+        set((state) => ({ settlement: { ...state.settlement, ...normalized } }));
+        usePrefsStore.getState().setFees(normalized);
       },
 
-      setFees: (fees) => {
-        set((state) => ({ settlement: { ...state.settlement, ...fees } }));
-        usePrefsStore.getState().setFees(fees);
+      setMode: (mode) => {
+        set((state) => ({ settlement: { ...state.settlement, mode } }));
+        // resetSession이 마지막에 고른 모드를 이어받도록 prefs에도 반영한다 (setFees와 같은 패턴)
+        usePrefsStore.getState().setMode(mode);
       },
 
       resetSession: () => {
@@ -350,11 +387,40 @@ export const useSettlementStore = create<SettlementState>()(
       partialize: (state) => ({ settlement: state.settlement }),
       migrate: (persistedState, version): { settlement: Settlement } => {
         try {
-          if (version !== CURRENT_VERSION) {
-            backupCorruptState(persistedState, version);
-            return { settlement: createEmptySettlement(usePrefsStore.getState()) };
+          if (version === 1) {
+            // v1 -> v2: roundingUnit·defaultAnte·treasurerId 삭제, mode 채움(§5-A-3 결정 1).
+            // members/rounds/extras 등은 보존한다.
+            const wrapped = persistedState as { settlement?: Record<string, unknown> };
+            const v1 = wrapped.settlement;
+            const looksLikeSettlement =
+              v1 &&
+              typeof v1 === 'object' &&
+              Array.isArray(v1.members) &&
+              Array.isArray(v1.rounds) &&
+              Array.isArray(v1.extras);
+            if (!looksLikeSettlement) {
+              backupCorruptState(persistedState, version);
+              return { settlement: createEmptySettlement(usePrefsStore.getState()) };
+            }
+            const {
+              roundingUnit: _roundingUnit,
+              defaultAnte: _defaultAnte,
+              treasurerId: _treasurerId,
+              ...rest
+            } = v1 as Record<string, unknown> & {
+              roundingUnit?: unknown;
+              defaultAnte?: unknown;
+              treasurerId?: unknown;
+            };
+            const migratedMode: SettlementMode =
+              v1!.mode === 'normal' || v1!.mode === 'bet' ? (v1!.mode as SettlementMode) : 'bet';
+            return {
+              settlement: { ...(rest as Omit<Settlement, 'version' | 'mode'>), version: CURRENT_VERSION, mode: migratedMode },
+            };
           }
-          return persistedState as { settlement: Settlement };
+          // 그 외 알 수 없는 버전은 손상으로 취급해 백업 후 초기화한다 (기존 C3 동작 유지)
+          backupCorruptState(persistedState, version);
+          return { settlement: createEmptySettlement(usePrefsStore.getState()) };
         } catch {
           backupCorruptState(persistedState, version);
           return { settlement: createEmptySettlement(usePrefsStore.getState()) };

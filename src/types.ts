@@ -51,12 +51,28 @@ export type Round = {
   transferAmount: number;
 };
 
+/**
+ * 정산 전체에 걸리는 모드.
+ * - `normal` : 정산 모드. 판은 참여 여부만 센다. 내기 UI 를 전부 숨기고 betDelta 를 0으로 만든다
+ * - `bet`    : 내기 모드. 판마다 pot / transfer 를 지정한다
+ *
+ * **전환은 비파괴적이다.** `normal` 로 바꿔도 각 라운드의 method/ante/payout/ranking/losers/teams 를
+ * 지우지 않고 계산에서만 제외한다. 잘못 눌렀을 때 순위·배당이 날아가면 복구할 방법이 없기 때문이다.
+ *
+ * **판정식 극성 주의**: 반드시 `mode === 'normal' ? 0 : delta` 로 쓴다.
+ * `mode === 'bet' ? delta : 0` 으로 쓰면 mode 가 undefined 인 구버전 저장값에서
+ * 내기 금액이 조용히 사라진다. 같은 로직의 두 표현인데 결과가 정반대다. (계획서 §5-A-3)
+ */
+export type SettlementMode = 'normal' | 'bet';
+
 export type Settlement = {
   version: number;
   id: string;
   /** ISO 8601 date string */
   date: string;
   title?: string;
+
+  mode: SettlementMode;
 
   members: Member[];
   gameFeePerGame: number;
@@ -65,14 +81,18 @@ export type Settlement = {
   shoeRenters: string[];
 
   /** 새 판을 만들 때 기본으로 채워지는 인당 판돈 */
-  defaultAnte: number;
+  // `defaultAnte` 는 제거됐다 (2026-08-21). `addRound` 가 직전 판의 ante 를 상속하므로
+  // 이 값이 실제로 쓰이는 건 맨 첫 판 하나뿐이었다. 그 하나 때문에 설정 화면에
+  // 상시 필드를 두면 판별 "인당 판돈" 과 이름이 겹쳐 어느 쪽이 적용되는지 헷갈린다.
+  // 첫 판의 ante 는 0 으로 시작하고 사용자가 그 판에서 직접 입력한다.
 
   rounds: Round[];
   extras: Extra[];
 
-  /** 총무. 지정되면 모든 송금이 총무에게 모이고 반올림 잔액도 총무가 흡수한다 */
-  treasurerId?: string;
-  roundingUnit: 0 | 10 | 100;
+  // `treasurerId` 는 제거됐다 (2026-08-21). 볼링장에서는 누가 카드로 긁었는지 다들 아는데
+  // 앱이 굳이 지정을 받아야 할 이유가 없었다. 송금 목록(settle.ts / TransferList)도 함께 제거했고,
+  // 결과 카드는 "누가 얼마" 와 총액만 보여준다.
+  // 올림으로 생기는 초과분은 최대 부담자가 흡수한다 — 입력이 전부 정수라 실무에서는 발생하지 않는다.
 };
 
 /** 한 판의 내기 결과. delta 는 "부담" 기준이라 +가 더 내는 쪽이다. */

@@ -2,7 +2,14 @@
  * 정산 계산 엔진. React 의존 0의 순수 함수.
  * 계획서: .omc/plans/2026-08-21-allcover-bowling-settlement.md §2, 인수조건 A1~A11
  */
-import type { CalcResult, MemberResult, Round, RoundBreakdown, Settlement } from '../types';
+import type {
+  CalcResult,
+  MemberResult,
+  Round,
+  RoundBreakdown,
+  Settlement,
+  SettlementMode,
+} from '../types';
 import { distributeWithRemainder, splitEvenly } from './money';
 
 function zeroed(ids: string[]): Record<string, number> {
@@ -17,11 +24,22 @@ function zeroed(ids: string[]): Record<string, number> {
  * - `pot`: `delta = ante - payout[rankOf(m)]`, `imbalance = 배당합계 - 판돈합계`
  * - `transfer`: 진 쪽이 이긴 쪽 1인분(`amount`)을 나눠 부담
  * - `none` 및 계산 불가 엣지(참여자 0명 / 순위 0개 / losers 0명 또는 전원): 전원 0
+ * - `mode === 'normal'`(정산 모드): 라운드에 내기 입력이 남아 있어도 전원 0, imbalance 0.
+ *   `RoundCard` 가 자기 경고를 그리려고 이 함수를 직접 호출하므로 게이트가 여기 있어야 한다 (G5).
+ *
+ * **극성 주의**: 반드시 `mode === 'normal'` 로 판정한다. `mode === 'bet'` 로 뒤집으면
+ * mode 가 undefined 인 구버전 저장값에서 내기 금액이 통째로 사라진다 (§5-A-3 결정 2, G8).
+ * 기본값을 `'bet'` 으로 둔 것도 같은 이유다 — 인자가 없거나 undefined 면 내기 모드로 폴백한다.
  */
-export function roundDelta(round: Round, gameFeePerGame: number): RoundBreakdown {
+export function roundDelta(
+  round: Round,
+  gameFeePerGame: number,
+  mode: SettlementMode = 'bet',
+): RoundBreakdown {
   const participants = [...new Set(round.participants)];
   const delta = zeroed(participants);
   const noBet: RoundBreakdown = { roundId: round.id, delta, imbalance: 0 };
+  if (mode === 'normal') return noBet; // 정산 모드: 라운드 데이터는 읽기만 하고 계산에서만 제외한다 (G1)
   if (participants.length === 0 || round.method === 'none') return noBet;
 
   const joined = new Set(participants);
@@ -79,7 +97,9 @@ export function calculate(settlement: Settlement): CalcResult {
     }
   }
 
-  const breakdowns = settlement.rounds.map((r) => roundDelta(r, settlement.gameFeePerGame));
+  const breakdowns = settlement.rounds.map((r) =>
+    roundDelta(r, settlement.gameFeePerGame, settlement.mode),
+  );
   const betDelta = zeroed(ids);
   for (const b of breakdowns) {
     for (const [id, d] of Object.entries(b.delta)) {
@@ -110,7 +130,8 @@ export function calculate(settlement: Settlement): CalcResult {
     return { id, gameFee, shoe, subtotal };
   });
 
-  const spread = distributeWithRemainder(subtotals, settlement.roundingUnit, settlement.treasurerId);
+  // treasurerId 가 제거돼(2026-08-21) 흡수자를 지정하지 않는다 → 최대 부담자가 흡수한다.
+  const spread = distributeWithRemainder(subtotals);
   const results: MemberResult[] = rows.map((row) => ({
     memberId: row.id,
     gameCount: gameCount[row.id],

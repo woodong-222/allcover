@@ -28,14 +28,13 @@ function makeSettlement(overrides: Partial<Settlement> = {}): Settlement {
     version: 1,
     id: 's1',
     date: '2026-08-21',
+    mode: 'bet',
     members: makeMembers(3),
     gameFeePerGame: 4000,
     shoeFee: 2000,
     shoeRenters: [],
-    defaultAnte: 0,
     rounds: [],
     extras: [],
-    roundingUnit: 100,
     ...overrides,
   };
 }
@@ -43,7 +42,6 @@ function makeSettlement(overrides: Partial<Settlement> = {}): Settlement {
 const baseCardProps = {
   breakdowns: [] as RoundBreakdown[],
   totalImbalance: 0,
-  transfers: [] as { from: string; to: string; amount: number }[],
 };
 
 describe('ResultCard', () => {
@@ -234,65 +232,6 @@ describe('ResultCard', () => {
     expect(hint).toHaveTextContent('참여 인원을 바꾸면 판돈 총액이 달라지므로');
   });
 
-  it('transfers를 TransferList를 통해 렌더하고, 총무 지정 시 헤더에 총무 이름을 보여준다', () => {
-    const members = makeMembers(3);
-    const settlement = makeSettlement({ members, treasurerId: 'm1' });
-    const results = [
-      makeResult('m1', { rounded: 16000 }),
-      makeResult('m2', { rounded: 14000 }),
-      makeResult('m3', { rounded: 12000 }),
-    ];
-    render(
-      <ResultCard
-        {...baseCardProps}
-        settlement={settlement}
-        results={results}
-        transfers={[
-          { from: 'm2', to: 'm1', amount: 14000 },
-          { from: 'm3', to: 'm1', amount: 12000 },
-        ]}
-      />,
-    );
-    const rows = screen.getAllByTestId('transfer-row');
-    expect(rows).toHaveLength(2);
-    expect(screen.getByText(/총무 멤버1/)).toBeInTheDocument();
-    // 총무 모드에서는 그리디 잔액 안내가 뜨지 않는다
-    expect(screen.queryByTestId('greedy-remainder-note')).not.toBeInTheDocument();
-  });
-
-  it('총무 미지정이면 송금 목록 아래에 그리디 모드 잔액 안내를 보여준다', () => {
-    const members = makeMembers(2);
-    const settlement = makeSettlement({ members });
-    const results = [
-      makeResult('m1', { rounded: 5000 }),
-      makeResult('m2', { rounded: -5000 }),
-    ];
-    render(
-      <ResultCard
-        {...baseCardProps}
-        settlement={settlement}
-        results={results}
-        transfers={[{ from: 'm1', to: 'm2', amount: 5000 }]}
-      />,
-    );
-    expect(screen.getByTestId('greedy-remainder-note')).toHaveTextContent(
-      '목록에 없는 잔액은 각자 카운터에서 결제하세요.',
-    );
-  });
-
-  it('transfers가 빈 배열이면 "정산할 금액이 없습니다" 안내를 보여준다', () => {
-    const members = makeMembers(2);
-    const settlement = makeSettlement({ members });
-    render(
-      <ResultCard
-        {...baseCardProps}
-        settlement={settlement}
-        results={members.map((m) => makeResult(m.id, { rounded: 0, subtotal: 0 }))}
-      />,
-    );
-    expect(screen.getByText('정산할 금액이 없습니다')).toBeInTheDocument();
-  });
-
   it('D7: pot 방식 라운드 요약에 방식·판돈·순위가 한 줄로 포함된다', () => {
     const members = makeMembers(2);
     const rounds: Round[] = [
@@ -354,6 +293,106 @@ describe('ResultCard', () => {
     expect(row).toHaveTextContent('진 쪽 멤버2');
   });
 
+  describe('G4: 정산 모드에서 내기 표시를 숨긴다', () => {
+    function makeBetRounds(): Round[] {
+      return [
+        {
+          id: 'r1',
+          participants: ['m1', 'm2'],
+          teams: null,
+          method: 'pot',
+          ante: 1000,
+          payout: [2000],
+          ranking: [['m1']],
+          losers: [],
+          transferSource: 'custom',
+          transferAmount: 0,
+        },
+      ];
+    }
+
+    it('mode: "normal"이면 "내기±" 열 헤더가 없다', () => {
+      const members = makeMembers(2);
+      const rounds = makeBetRounds();
+      const settlement = makeSettlement({ members, rounds, mode: 'normal' });
+      render(
+        <ResultCard
+          {...baseCardProps}
+          settlement={settlement}
+          results={members.map((m) => makeResult(m.id, { betDelta: 500 }))}
+        />,
+      );
+      expect(screen.queryByText('내기±')).not.toBeInTheDocument();
+    });
+
+    it('mode: "normal"이면 판별 내기 요약(D7)이 없다', () => {
+      const members = makeMembers(2);
+      const rounds = makeBetRounds();
+      const settlement = makeSettlement({ members, rounds, mode: 'normal' });
+      render(
+        <ResultCard
+          {...baseCardProps}
+          settlement={settlement}
+          results={members.map((m) => makeResult(m.id))}
+        />,
+      );
+      expect(screen.queryByTestId('round-summary-row')).not.toBeInTheDocument();
+      expect(screen.queryByText('판별 내기 요약')).not.toBeInTheDocument();
+    });
+
+    it('mode: "bet"이면 "내기±" 열 헤더와 판별 내기 요약이 그대로 있다', () => {
+      const members = makeMembers(2);
+      const rounds = makeBetRounds();
+      const settlement = makeSettlement({ members, rounds, mode: 'bet' });
+      render(
+        <ResultCard
+          {...baseCardProps}
+          settlement={settlement}
+          results={members.map((m) => makeResult(m.id, { betDelta: 500 }))}
+        />,
+      );
+      expect(screen.getByText('내기±')).toBeInTheDocument();
+      expect(screen.getByTestId('round-summary-row')).toBeInTheDocument();
+    });
+
+    it('mode: "normal"이고 totalImbalance === 0, breakdowns 전부 0이면 경고 블록과 원인 힌트가 없다', () => {
+      const members = makeMembers(2);
+      const rounds = makeBetRounds();
+      const settlement = makeSettlement({ members, rounds, mode: 'normal' });
+      // calculate()가 mode 게이트를 걸면 실제로는 betDelta/imbalance 모두 0이 된다.
+      // 여기서는 ResultCard 자체가 그 입력을 그대로 존중해 아무 것도 안 그리는지만 본다.
+      render(
+        <ResultCard
+          {...baseCardProps}
+          settlement={settlement}
+          results={members.map((m) => makeResult(m.id, { betDelta: 0 }))}
+          breakdowns={[{ roundId: 'r1', delta: { m1: 0, m2: 0 }, imbalance: 0 }]}
+          totalImbalance={0}
+        />,
+      );
+      expect(screen.queryByTestId('imbalance-warning')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('imbalance-cause-hint')).not.toBeInTheDocument();
+    });
+
+    it('mode: "normal"에서도 표 열 개수가 헤더/바디 사이에 어긋나지 않는다', () => {
+      const members = makeMembers(2);
+      const settlement = makeSettlement({ members, mode: 'normal' });
+      render(
+        <ResultCard
+          {...baseCardProps}
+          settlement={settlement}
+          results={members.map((m) => makeResult(m.id))}
+        />,
+      );
+      const table = screen.getByTestId('member-table');
+      const headerCellCount = table.querySelectorAll('thead th').length;
+      const firstRow = table.querySelector('tbody tr');
+      const bodyCellCount = firstRow?.querySelectorAll('td').length ?? 0;
+      expect(headerCellCount).toBe(6); // 이름·판수·게임비·신발·기타·최종 (내기± 제외)
+      expect(bodyCellCount).toBe(headerCellCount);
+    });
+  });
+
   it('R1: 카드 배경/글자색이 hex CSS 변수(var(--card-*))로만 지정된다', () => {
     const ref = createRef<HTMLDivElement>();
     const members = makeMembers(1);
@@ -383,7 +422,7 @@ describe('ResultCard', () => {
         transferAmount: 0,
       },
     ];
-    const settlement = makeSettlement({ members, rounds, treasurerId: 'm1' });
+    const settlement = makeSettlement({ members, rounds });
     render(
       <ResultCard
         {...baseCardProps}
@@ -393,7 +432,6 @@ describe('ResultCard', () => {
           makeResult('m2', { rounded: -1000, betDelta: -500 }),
         ]}
         totalImbalance={-500}
-        transfers={[{ from: 'm2', to: 'm1', amount: 3300 }]}
       />,
     );
     const card = screen.getByTestId('result-card');
