@@ -16,23 +16,21 @@ export function roundTo(amount: number): number {
 }
 
 /**
- * `total` 을 `count` 명에게 나눈다. 합계는 항상 정확히 `total` 이다.
+ * `total` 을 `count` 명에게 나눈다. **전원이 정확히 같은 금액을 낸다.**
  *
- * `total` 이 정수면 결과도 **전부 정수**이고, 나누어떨어지지 않는 1원씩은 앞사람부터
- * 순서대로 흡수한다. 호출 측이 넘긴 순서가 곧 결정 순서이므로 같은 입력이면 항상 같은 결과다.
- * (소수점 금액이 그대로 공유 이미지에 찍히는 것을 막기 위한 것 — 계획서 R13)
+ * 나누어떨어지지 않으면 1원 단위로 올리므로 합계가 `total` 보다 최대 `count - 1` 원 커진다.
+ * 예: 8,000원을 3명이 나누면 `2,667 × 3 = 8,001` 로 1원이 더 걷힌다.
+ *
+ * **이건 의도된 트레이드오프다** (2026-08-21 사용자 결정). 이전 구현은 합계를 정확히
+ * `total` 로 맞추느라 `2,667 / 2,667 / 2,666` 처럼 한 명만 1원을 덜 냈는데, 볼링 모임에서
+ * "왜 쟤만 1원 덜 내" 가 나오는 쪽이 1~2원 더 걷히는 쪽보다 나쁘다고 판단했다.
+ * 초과분은 `calculate()` 가 `roundingSurplus` 로 드러내므로 조용히 사라지지 않는다.
+ *
+ * `total` 이 정수면 결과도 전부 정수다. 소수점 금액이 공유 이미지에 찍히는 것을 막는다 (R13).
  */
 export function splitEvenly(total: number, count: number): number[] {
   if (count <= 0) return [];
-  const base = Math.floor(total / count);
-  let rest = total - base * count; // 정수 입력이면 0 <= rest < count 인 정수
-  const shares: number[] = [];
-  for (let i = 0; i < count; i++) {
-    const bonus = rest > 0 ? Math.min(1, rest) : 0;
-    shares.push(base + bonus);
-    rest -= bonus;
-  }
-  return shares;
+  return Array<number>(count).fill(Math.ceil(total / count));
 }
 
 export type RoundedShare = { rounded: number; adjustment: number };

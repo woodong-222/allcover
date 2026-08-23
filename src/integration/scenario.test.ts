@@ -299,7 +299,7 @@ describe('통합 시나리오 — 계획서 §6-5 (8명 / 5판)', () => {
   });
 
   it('9. 멤버 삭제는 pot 라운드의 판돈만 줄여 imbalance 를 발생시킨다 (제로섬이 깨지는 지점)', () => {
-    const { m4 } = buildScenario();
+    const { m4, m5, m6, m7 } = buildScenario();
     store().removeMember(m4);
 
     const { results, breakdowns, totalImbalance } = calculate(current());
@@ -308,15 +308,25 @@ describe('통합 시나리오 — 계획서 §6-5 (8명 / 5판)', () => {
     expect(breakdowns.map((b) => b.imbalance)).toEqual([1000, 1000, 0, 1000, 0]);
     expect(totalImbalance).toBe(3000);
 
-    // 따라서 Σ betDelta 는 0 이 아니라 -totalImbalance 다. 이것이 항상 성립하는 불변식이다.
-    // 3판의 진 팀이 3명이 되어 16,000/3 이 나누어떨어지지 않지만, splitEvenly 가 정수로
-    // 쪼개면서 합계를 보존하므로 부동소수 잔여 없이 정확히 일치한다 (R13).
-    expect(sum(results.map((r) => r.betDelta))).toBe(-totalImbalance);
-    expect(sum(results.map((r) => r.betDelta))).toBe(-3000);
+    // 3판은 진 팀이 3명이 되어 16,000/3 이 나누어떨어지지 않는다. splitEvenly 는 전원 동일
+    // 정책이라 셋 다 5,334 를 내고 16,002 가 걷힌다 — 정확히 2원이 더 걷힌다 (상한 3 미만).
+    const loserShare = Math.ceil(16000 / 3);
+    expect(loserShare).toBe(5334);
+    const transferSurplus = loserShare * 3 - 16000;
+    expect(transferSurplus).toBe(2);
+    expect(transferSurplus).toBeLessThan(3);
+    for (const id of [m5, m6, m7]) {
+      expect(breakdowns[2].delta[id]).toBe(loserShare); // 셋이 정확히 같은 금액
+    }
+
+    // 따라서 Σ betDelta 는 -totalImbalance 가 아니라 거기에 초과분 2원을 더한 값이다.
+    // 이것이 새 정책에서 항상 성립하는 불변식이다: Σ betDelta + Σ imbalance === 초과분
+    expect(sum(results.map((r) => r.betDelta)) + totalImbalance).toBe(transferSurplus);
+    expect(sum(results.map((r) => r.betDelta))).toBe(-2998);
     expect(results.every((r) => Number.isInteger(r.betDelta))).toBe(true);
 
     // 총액도 그만큼 어긋난다 — UI가 경고 배지를 띄워야 하는 상태다 (계획서 R4).
     const base = sum(results.map((r) => r.gameFee + r.shoe + r.extra));
-    expect(sum(results.map((r) => r.subtotal))).toBe(base - totalImbalance);
+    expect(sum(results.map((r) => r.subtotal))).toBe(base - totalImbalance + transferSurplus);
   });
 });

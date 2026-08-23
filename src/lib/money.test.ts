@@ -33,37 +33,87 @@ describe('roundTo — 1원 단위 올림', () => {
   });
 });
 
-describe('splitEvenly', () => {
-  it('R13: 나누어떨어지지 않아도 전부 정수이고 합계는 정확히 total 이다', () => {
-    // 8,000원을 3명이 나누면 2,666.666… 이 아니라 2,667 / 2,667 / 2,666 이 되어야 한다
-    expect(splitEvenly(8000, 3)).toEqual([2667, 2667, 2666]);
-    expect(sum(splitEvenly(8000, 3))).toBe(8000);
+describe('splitEvenly — 전원이 정확히 같은 금액을 낸다', () => {
+  it('E1: 나누어떨어지지 않아도 전원이 같은 정수 금액을 낸다 (8,000 / 3명)', () => {
+    // 8,000원을 3명이 나누면 2,666.666… 을 올려 **전원 2,667** 이다.
+    // 이전 정책은 2,667 / 2,667 / 2,666 으로 합계를 8,000 에 맞췄지만, 볼링 모임에서
+    // "왜 쟤만 1원 덜 내" 가 나오는 쪽이 1~2원 더 걷히는 쪽보다 나쁘다고 판단해
+    // 2026-08-21 에 전원 동일로 바꿨다. 초과 1원은 CalcResult.roundingSurplus 로 드러난다.
+    expect(splitEvenly(8000, 3)).toEqual([2667, 2667, 2667]);
     expect(splitEvenly(8000, 3).every(Number.isInteger)).toBe(true);
+    // 합계는 total 이상이고, 초과분은 정확히 1원이다 (인원수 3 미만)
+    expect(sum(splitEvenly(8000, 3))).toBe(8001);
+    expect(sum(splitEvenly(8000, 3)) - 8000).toBe(1);
   });
 
-  it('R13: 나머지는 앞사람부터 순서대로 1원씩 흡수한다 (결정적)', () => {
-    expect(splitEvenly(10, 4)).toEqual([3, 3, 2, 2]);
-    expect(splitEvenly(10, 3)).toEqual([4, 3, 3]);
-    expect(splitEvenly(9, 3)).toEqual([3, 3, 3]);
-    // 같은 입력은 항상 같은 결과 — 새로고침해도 금액이 흔들리면 안 된다
-    expect(splitEvenly(10, 4)).toEqual(splitEvenly(10, 4));
+  it('E1: 어떤 조합에서도 모든 몫이 서로 완전히 같다 (이번 정책 변경의 핵심)', () => {
+    // 이 검사가 새 정책을 지키는 유일한 방어선이다. "사람 간 차이 <= 1원" 으로 느슨하게 두면
+    // 옛 구현(한 명만 1원 덜 냄)이 그대로 통과하므로, 반드시 완전 동일성으로 조여 둔다.
+    let uneven = 0;
+    for (let total = 0; total <= 200; total += 7) {
+      for (let count = 1; count <= 9; count++) {
+        const shares = splitEvenly(total, count);
+        expect(new Set(shares).size).toBe(1);
+        expect(Math.max(...shares) - Math.min(...shares)).toBe(0);
+        if (total % count !== 0) uneven++;
+      }
+    }
+    // 나누어떨어지지 않는 케이스가 실제로 생성돼야 검사가 공허하지 않다
+    expect(uneven).toBe(151);
   });
 
-  it('여러 조합에서 합계 보존과 정수성이 모두 성립한다', () => {
+  it('E2: 초과분은 정확히 ceil(total/count)*count - total 이고 항상 인원수 미만이다', () => {
+    let withSurplus = 0;
     for (let total = 0; total <= 200; total += 7) {
       for (let count = 1; count <= 9; count++) {
         const shares = splitEvenly(total, count);
         expect(shares).toHaveLength(count);
         expect(shares.every(Number.isInteger)).toBe(true);
-        expect(sum(shares)).toBe(total);
-        // 사람 간 차이는 최대 1원
-        expect(Math.max(...shares) - Math.min(...shares)).toBeLessThanOrEqual(1);
+
+        const surplus = sum(shares) - total;
+        // 근사가 아니라 정확한 값이다 — toBeCloseTo 로 두면 1원 유출을 못 잡는다
+        expect(surplus).toBe(Math.ceil(total / count) * count - total);
+        expect(surplus).toBeGreaterThanOrEqual(0);
+        // 상한도 정확하다: 나눗셈 한 번이 만드는 초과분은 반드시 인원수 미만이다
+        expect(surplus).toBeLessThan(count);
+        if (surplus > 0) withSurplus++;
       }
+    }
+    expect(withSurplus).toBe(151);
+  });
+
+  it('나누어떨어지면 초과분이 0 이고 합계가 정확히 total 이다', () => {
+    for (const [total, count] of [
+      [9, 3],
+      [12000, 5],
+      [16000, 4],
+      [0, 7],
+    ] as const) {
+      const shares = splitEvenly(total, count);
+      expect(new Set(shares).size).toBe(1);
+      expect(sum(shares)).toBe(total);
+    }
+    expect(splitEvenly(9, 3)).toEqual([3, 3, 3]);
+  });
+
+  it('같은 입력은 항상 같은 결과다 (결정성 — 새로고침해도 금액이 흔들리면 안 된다)', () => {
+    expect(splitEvenly(10, 4)).toEqual([3, 3, 3, 3]);
+    expect(splitEvenly(10, 3)).toEqual([4, 4, 4]);
+    for (const [total, count] of [
+      [10, 4],
+      [10, 3],
+      [8000, 3],
+      [13000, 6],
+    ] as const) {
+      expect(splitEvenly(total, count)).toEqual(splitEvenly(total, count));
     }
   });
 
-  it('음수 총액도 정수로 쪼개고 합계를 보존한다', () => {
-    expect(sum(splitEvenly(-10, 3))).toBe(-10);
+  it('음수 총액도 전원 동일한 정수이고 합계는 total 이상이다', () => {
+    // Math.ceil 은 0 쪽으로 가므로 -10/3 = -3.333… → 전원 -3, 합계 -9 (total 보다 1 크다)
+    expect(splitEvenly(-10, 3)).toEqual([-3, -3, -3]);
+    expect(sum(splitEvenly(-10, 3))).toBe(-9);
+    expect(sum(splitEvenly(-10, 3)) - -10).toBe(1);
     expect(splitEvenly(-10, 3).every(Number.isInteger)).toBe(true);
   });
 

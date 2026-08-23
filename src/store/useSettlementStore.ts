@@ -8,7 +8,7 @@ import { nanoid } from 'nanoid';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { BetMethod, Extra, Member, Round, Settlement, SettlementMode } from '../types';
-import { createGuardedStorage, backupCorruptState } from './persistGuard';
+import { createGuardedStorage, backupCorruptState, clearCorruptBackups } from './persistGuard';
 import { initialPrefs, usePrefsStore, type Prefs, type PrefsFees } from './usePrefsStore';
 
 const STORAGE_KEY = 'allcover:session:v1';
@@ -377,6 +377,9 @@ export const useSettlementStore = create<SettlementState>()(
 
       resetSession: () => {
         const prefs = usePrefsStore.getState();
+        // 손상 백업에는 이전 세션의 멤버 실명과 금액이 통째로 들어 있다. "새 정산" 은
+        // 사용자에게 "지웠다" 는 뜻이므로 그 사본도 함께 지운다 (보안 검토 LOW).
+        clearCorruptBackups();
         set({ settlement: createEmptySettlement(prefs) });
       },
     }),

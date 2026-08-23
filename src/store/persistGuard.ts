@@ -11,10 +11,38 @@
 import type { PersistStorage, StorageValue } from 'zustand/middleware';
 import { safeGet, safeSet, safeRemove } from '../lib/storage';
 
-/** 손상된 원본 문자열을 그대로 백업한다 */
+const CORRUPT_PREFIX = 'allcover:corrupt:';
+
+/**
+ * 지금까지 쌓인 손상 백업을 모두 지운다.
+ *
+ * 백업에는 세션 JSON 전체 — 즉 **멤버 실명과 금액** — 이 들어간다. 정리하지 않으면
+ * 사용자가 "새 정산"으로 데이터를 지웠다고 믿어도 이름이 무기한 남고 quota 도 잠식한다
+ * (2026-08-21 보안 검토 LOW).
+ */
+export function clearCorruptBackups(): void {
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const key = window.localStorage.key(i);
+      if (key !== null && key.startsWith(CORRUPT_PREFIX)) keys.push(key);
+    }
+    for (const key of keys) safeRemove(key);
+  } catch {
+    // 열거 자체가 막힌 환경(프라이빗 모드 등)이면 정리를 포기한다. 흐름은 계속된다.
+  }
+}
+
+/**
+ * 손상된 원본 문자열을 그대로 백업한다.
+ *
+ * 새 백업을 쓰기 전에 기존 백업을 지워 **항상 최신 1건만** 남긴다. 진단에는 가장 최근
+ * 손상본이면 충분하고, 과거 백업을 계속 들고 있으면 개인정보만 오래 남는다.
+ */
 export function backupCorruptRaw(raw: string): void {
   try {
-    safeSet(`allcover:corrupt:${Date.now()}`, raw);
+    clearCorruptBackups();
+    safeSet(`${CORRUPT_PREFIX}${Date.now()}`, raw);
   } catch {
     // 백업조차 실패해도 초기화 흐름은 계속 진행한다
   }

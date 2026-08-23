@@ -25,9 +25,21 @@ export type NumberFieldProps = {
   onChange: (v: number) => void;
   suffix?: string;
   min?: number;
+  /**
+   * 상한. 기본 1억원.
+   *
+   * 볼링 정산에 1억을 넘는 금액이 들어올 일은 없다. 상한이 없으면 붙여넣기나 키 반복으로
+   * 들어온 천문학적 값이 그대로 저장되고, 그 값이 계산 루프의 탐색 범위에 선형으로 반영돼
+   * 화면이 멈춘다 (2026-08-21 보안 검토 MEDIUM). 루프 쪽에도 별도 상한이 있지만
+   * 애초에 말이 안 되는 값을 상태에 넣지 않는 것이 낫다.
+   */
+  max?: number;
   step?: number;
   id?: string;
 };
+
+/** 정산 금액의 현실적 상한. 이 값을 넘기면 오타이지 의도가 아니다. */
+const DEFAULT_MAX = 100_000_000;
 
 function toDigits(raw: string): string {
   return raw.replace(/[^0-9]/g, '');
@@ -43,7 +55,16 @@ function formatDigits(digits: string): string {
   return Number(digits).toLocaleString('ko-KR');
 }
 
-export function NumberField({ label, value, onChange, suffix, min = 0, step, id }: NumberFieldProps) {
+export function NumberField({
+  label,
+  value,
+  onChange,
+  suffix,
+  min = 0,
+  max = DEFAULT_MAX,
+  step,
+  id,
+}: NumberFieldProps) {
   const autoId = useId();
   const fieldId = id ?? autoId;
   const [digits, setDigits] = useState(() => {
@@ -64,9 +85,12 @@ export function NumberField({ label, value, onChange, suffix, min = 0, step, id 
 
   function handleChange(e: ChangeEvent<HTMLInputElement>): void {
     const nextDigits = toDigits(e.target.value);
-    setDigits(nextDigits);
     const num = nextDigits === '' ? 0 : Number(nextDigits);
-    onChange(Math.max(min, num));
+    const clamped = Math.min(max, Math.max(min, num));
+    // 상한에 걸리면 화면의 숫자도 함께 잘라야 한다. 그렇지 않으면 입력칸에는
+    // 잘리기 전 숫자가 남아 저장된 값과 어긋나 보인다.
+    setDigits(clamped === 0 ? '' : String(clamped));
+    onChange(clamped);
   }
 
   return (

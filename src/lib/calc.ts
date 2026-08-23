@@ -107,8 +107,8 @@ export function calculate(settlement: Settlement): CalcResult {
     }
   }
 
-  // 기타비용은 항목마다 분담 대상에게 정수로 균등 분배한다. 나머지 1원씩은 앞사람부터
-  // 흡수하므로 항목 총액이 정확히 보존되고, 10,000/3 같은 경우에도 소수점이 남지 않는다 (R13).
+  // 기타비용은 항목마다 분담 대상에게 **전원 같은 금액**으로 분배한다.
+  // 나누어떨어지지 않으면 1원씩 올려 걷으므로 항목 총액보다 조금 더 걷힌다 (roundingSurplus 참고).
   const extra = zeroed(ids);
   for (const item of settlement.extras) {
     const sharers = (item.splitAmong === 'all' ? ids : item.splitAmong).filter((id) =>
@@ -144,9 +144,18 @@ export function calculate(settlement: Settlement): CalcResult {
     adjustment: spread[row.id].adjustment,
   }));
 
+  // 그날 실제로 결제되는 금액. 나눗셈 올림이 끼어들기 전의 원본 합계다.
+  const actualBill =
+    settlement.gameFeePerGame * ids.reduce((acc, id) => acc + gameCount[id], 0) +
+    settlement.shoeFee * ids.filter((id) => shoeRenters.has(id)).length +
+    settlement.extras.reduce((acc, item) => acc + item.amount, 0);
+
   return {
     results,
     breakdowns,
     totalImbalance: breakdowns.reduce((acc, b) => acc + b.imbalance, 0),
+    // 전원이 같은 금액을 내도록 1원 단위로 올린 결과 실제 결제액보다 더 걷힌 금액.
+    // 나눗셈 한 번당 최대 (인원-1)원이라 보통 0~2원이다. 조용히 삼키지 않고 드러낸다.
+    roundingSurplus: results.reduce((acc, r) => acc + r.rounded, 0) - actualBill,
   };
 }

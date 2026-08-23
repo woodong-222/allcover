@@ -79,15 +79,24 @@ export function distributeRemainder(payout: number[], sizes: number[], pot: numb
   }
 
   // 4) 두 등수를 함께 조정한다. (뒤 등수, 1등) 쌍부터 시도한다.
-  for (let k = paid.length - 1; k >= 0; k--) {
-    for (let m = 0; m < paid.length; m++) {
+  //
+  // ★ 탐색 반복 횟수에 상한을 둔다 (2026-08-21 보안 검토 MEDIUM).
+  // window 는 `remaining` 에 선형 비례하는데 `remaining` 은 사용자가 입력한 배당액에서 온다.
+  // 상한이 없으면 배당액 10억 입력 시 7.5억 회를 돌아 메인 스레드가 10초 넘게 멈춘다.
+  // 게다가 이 함수는 PayoutEditor 가 **매 렌더마다** 부르고 payout 은 localStorage 에
+  // 저장되므로, 새로고침해도 같은 값으로 다시 멈춰 앱이 영구적으로 못 쓰게 된다.
+  // 상한을 넘으면 포기하고 5) 로 떨어진다 — 5) 는 이미 "정수 해 없음" 을 정상 처리한다.
+  let budget = 200_000;
+  for (let k = paid.length - 1; k >= 0 && budget > 0; k--) {
+    for (let m = 0; m < paid.length && budget > 0; m++) {
       const i = paid[k];
       const j = paid[m];
       if (i === j) continue;
       // a·sizes[i] + b·sizes[j] === remaining 인 정수 해를 찾는다.
       // a는 remaining/sizes[i] 근처이고, 해가 있다면 sizes[j] 주기 안에 반드시 나타난다.
       const window = Math.ceil(Math.abs(remaining) / sizes[i]) + sizes[j] + 1;
-      for (let a = -window; a <= window; a++) {
+      for (let a = -window; a <= window && budget > 0; a++) {
+        budget--;
         const rest = remaining - a * sizes[i];
         if (rest % sizes[j] !== 0) continue;
         const b = rest / sizes[j];

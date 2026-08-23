@@ -297,13 +297,18 @@ describe('R13: 금액이 소수점으로 새지 않는다', () => {
     });
     const r = byId(s);
 
-    // 8,000원을 3명이 나눠 내되 2,666.666… 이 아니라 2,667 / 2,667 / 2,666 이다
+    // 8,000원을 3명이 나눠 내되 2,666.666… 이 아니라 **전원 2,667** 이다 (한 명만 덜 내지 않는다)
     expect(r.of('c').betDelta).toBe(2667);
     expect(r.of('d').betDelta).toBe(2667);
-    expect(r.of('e').betDelta).toBe(2666);
+    expect(r.of('e').betDelta).toBe(2667);
     expect(r.of('a').betDelta).toBe(-4000);
     expect(r.of('b').betDelta).toBe(-4000);
-    expect(sum(r.results.map((x) => x.betDelta))).toBe(0);
+
+    // 제로섬이 아니라 "정확히 1원 더 걷힌다". 이 1원은 splitEvenly 의 초과분이고
+    // roundingSurplus 로 드러난다 — 근사가 아니라 정확한 값으로 조인다.
+    expect(sum(r.results.map((x) => x.betDelta))).toBe(1);
+    expect(sum(r.results.map((x) => x.betDelta))).toBe(Math.ceil(8000 / 3) * 3 - 8000);
+    expect(r.roundingSurplus).toBe(1);
 
     // 화면·공유 이미지에 나가는 모든 숫자 칸이 정수여야 한다
     for (const row of r.results) {
@@ -341,35 +346,50 @@ describe('R13: 금액이 소수점으로 새지 않는다', () => {
     expect(formatSigned(r.of('c').betDelta)).toBe('+2,667');
   });
 
-  it('R13: 진 쪽 2~7명 × 참여 3~8명 조합에서 Σ delta === 0 이 정확히 성립한다', () => {
+  it('R13: 진 쪽 2~7명 × 참여 3~8명 조합에서 Σ delta 가 정확히 초과분과 일치한다', () => {
     const ids = ['m0', 'm1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7'];
     let checked = 0;
+    let withSurplus = 0;
 
     for (let participantCount = 3; participantCount <= 8; participantCount++) {
       const participants = ids.slice(0, participantCount);
       for (let loserCount = 2; loserCount <= Math.min(7, participantCount - 1); loserCount++) {
         for (const amount of [4000, 3333, 1000, 7777]) {
+          const losers = participants.slice(0, loserCount);
           const b = roundDelta(
             mkRound({
               id: `r-${participantCount}-${loserCount}-${amount}`,
               participants,
               method: 'transfer',
-              losers: participants.slice(0, loserCount),
+              losers,
               transferSource: 'custom',
               transferAmount: amount,
             }),
             4000,
           );
           const deltas = Object.values(b.delta);
-          // toBeCloseTo 가 아니라 toBe — 부동소수 잔여가 하나도 없어야 한다
-          expect(sum(deltas)).toBe(0);
+          const pot = amount * (participantCount - loserCount);
+          // 진 쪽이 낼 금액을 calc 와 무관하게 독립적으로 계산해 대조한다
+          const expectedSurplus = Math.ceil(pot / loserCount) * loserCount - pot;
+
+          // toBeCloseTo 가 아니라 toBe — 초과분에는 정확한 값이 있다
+          expect(sum(deltas)).toBe(expectedSurplus);
+          expect(expectedSurplus).toBeGreaterThanOrEqual(0);
+          // 상한: 나눗셈 한 번의 초과분은 반드시 진 쪽 인원수 미만이다
+          expect(expectedSurplus).toBeLessThan(loserCount);
+
+          // 진 쪽 전원이 정확히 같은 금액을 낸다 (한 명만 1원 덜 내지 않는다)
+          expect(new Set(losers.map((id) => b.delta[id])).size).toBe(1);
           expect(deltas.every(Number.isInteger)).toBe(true);
           expect(b.imbalance).toBe(0);
           checked++;
+          if (expectedSurplus > 0) withSurplus++;
         }
       }
     }
     expect(checked).toBe(84);
+    // 초과분이 실제로 생기는 케이스가 충분해야 이 검사가 공허하지 않다
+    expect(withSurplus).toBe(40);
   });
 
   it("R13: transferSource 'gameFee' 로 나누어떨어지지 않아도 정수가 유지된다", () => {
@@ -601,17 +621,19 @@ describe('기타비용 분담', () => {
     expect(sum(r.results.map((x) => x.extra))).toBe(9000);
   });
 
-  it('R13: 기타비용 10,000원 / 3명 → 각 배분이 정수이고 합이 정확히 10,000', () => {
+  it('R13: 기타비용 10,000원 / 3명 → 전원 정확히 같은 정수이고 초과분은 2원이다', () => {
     const ms = members('a', 'b', 'c');
     const s = mkSettlement({
       members: ms,
       extras: [{ id: 'e1', label: '치킨', amount: 10000, splitAmong: 'all' }],
     });
     const r = byId(s);
-    // 3,333.333… 이 아니라 3,334 / 3,333 / 3,333
-    expect(r.results.map((x) => x.extra)).toEqual([3334, 3333, 3333]);
-    expect(sum(r.results.map((x) => x.extra))).toBe(10000);
-    expect(sum(r.results.map((x) => x.rounded))).toBe(10000);
+    // 3,333.333… 을 올려 전원 3,334. 이전 정책의 3,334 / 3,333 / 3,333 과 달리 아무도 덜 내지 않는다
+    expect(r.results.map((x) => x.extra)).toEqual([3334, 3334, 3334]);
+    expect(sum(r.results.map((x) => x.extra))).toBe(10002);
+    expect(sum(r.results.map((x) => x.extra)) - 10000).toBe(2); // 상한 3 미만
+    expect(sum(r.results.map((x) => x.rounded))).toBe(10002);
+    expect(r.roundingSurplus).toBe(2);
   });
 
   it("B5'/B6': 나누어떨어지지 않는 기타비용도 전 항목이 정수이고 표시에 소수점이 없다", () => {
@@ -626,13 +648,14 @@ describe('기타비용 분담', () => {
       expect(Number.isInteger(row.adjustment)).toBe(true);
       expect(formatKRW(row.extra)).not.toContain('.');
     }
-    expect(sum(r.results.map((x) => x.extra))).toBe(10000);
-    expect(sum(r.results.map((x) => x.rounded))).toBe(10000);
+    expect(sum(r.results.map((x) => x.extra))).toBe(10002);
+    expect(sum(r.results.map((x) => x.rounded))).toBe(10002);
   });
 
-  it('R13: 여러 금액 × 인원 조합에서 기타비용 항목 총액이 정확히 보존된다', () => {
+  it('R13: 여러 금액 × 인원 조합에서 기타비용 초과분이 정확히 상한 안에 있다', () => {
     const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
     let checked = 0;
+    let withSurplus = 0;
     for (let count = 1; count <= 7; count++) {
       for (const amount of [10000, 12000, 7777, 1, 99999]) {
         const s = mkSettlement({
@@ -640,27 +663,42 @@ describe('기타비용 분담', () => {
           extras: [{ id: 'e1', label: 'x', amount, splitAmong: 'all' }],
         });
         const r = byId(s);
-        expect(sum(r.results.map((x) => x.extra))).toBe(amount);
-        expect(r.results.every((x) => Number.isInteger(x.extra))).toBe(true);
         const shares = r.results.map((x) => x.extra);
-        expect(Math.max(...shares) - Math.min(...shares)).toBeLessThanOrEqual(1);
+        const expectedSurplus = Math.ceil(amount / count) * count - amount;
+
+        // 총액이 "보존"되지는 않는다. 대신 초과분이 정확히 얼마인지가 고정된다.
+        expect(sum(shares)).toBe(amount + expectedSurplus);
+        expect(sum(shares)).toBeGreaterThanOrEqual(amount);
+        expect(sum(shares) - amount).toBeLessThan(count); // 상한: 분담 인원 미만
+        expect(r.roundingSurplus).toBe(expectedSurplus);
+
+        expect(r.results.every((x) => Number.isInteger(x.extra))).toBe(true);
+        // 전원 동일 — "차이 1원 이하" 가 아니라 차이 0 이다
+        expect(Math.max(...shares) - Math.min(...shares)).toBe(0);
         checked++;
+        if (expectedSurplus > 0) withSurplus++;
       }
     }
     expect(checked).toBe(35);
+    expect(withSurplus).toBe(20);
   });
 
-  it('기타비용 여러 건이 겹쳐도 각 항목 총액이 보존된다', () => {
+  it('기타비용 여러 건이 겹치면 초과분이 항목별 초과분의 합과 일치한다', () => {
     const s = mkSettlement({
       members: members('a', 'b', 'c'),
       extras: [
-        { id: 'e1', label: '치킨', amount: 10000, splitAmong: 'all' },
-        { id: 'e2', label: '맥주', amount: 5000, splitAmong: ['a', 'b'] },
+        { id: 'e1', label: '치킨', amount: 10000, splitAmong: 'all' }, // 3,334 × 3 = 10,002 (+2)
+        { id: 'e2', label: '맥주', amount: 5000, splitAmong: ['a', 'b'] }, // 2,500 × 2 = 5,000 (+0)
       ],
     });
     const r = byId(s);
-    expect(sum(r.results.map((x) => x.extra))).toBe(15000);
+    expect(sum(r.results.map((x) => x.extra))).toBe(15002);
+    expect(r.of('a').extra).toBe(3334 + 2500);
+    expect(r.of('b').extra).toBe(3334 + 2500);
+    expect(r.of('c').extra).toBe(3334);
     expect(r.results.every((x) => Number.isInteger(x.extra))).toBe(true);
+    // 초과분은 두 나눗셈의 초과분 합(2 + 0)과 정확히 같다
+    expect(r.roundingSurplus).toBe(2 + 0);
   });
 
   it('분담 대상이 모두 멤버에서 빠진 기타비용은 무시되고 크래시하지 않는다', () => {
@@ -670,6 +708,151 @@ describe('기타비용 분담', () => {
     });
     const r = byId(s);
     expect(r.of('a').extra).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// roundingSurplus — 전원 동일 분배로 더 걷힌 금액
+// ---------------------------------------------------------------------------
+
+describe('roundingSurplus — 더 걷힌 금액이 정확히 드러난다', () => {
+  it('판돈 8,000원을 3명이 나누면 정확히 1원이다', () => {
+    const s = mkSettlement({
+      members: members('a', 'b', 'c', 'd', 'e'),
+      gameFeePerGame: 4000,
+      shoeFee: 0,
+      rounds: [
+        mkRound({
+          id: 'r1',
+          participants: ['a', 'b', 'c', 'd', 'e'],
+          method: 'transfer',
+          losers: ['c', 'd', 'e'],
+          transferSource: 'gameFee',
+        }),
+      ],
+    });
+    const r = byId(s);
+    expect(r.roundingSurplus).toBe(1);
+    expect(r.roundingSurplus).toBe(Math.ceil(8000 / 3) * 3 - 8000);
+  });
+
+  it('기타비용 10,000원을 3명이 나누면 정확히 2원이다', () => {
+    const s = mkSettlement({
+      members: members('a', 'b', 'c'),
+      gameFeePerGame: 0,
+      shoeFee: 0,
+      extras: [{ id: 'e1', label: '치킨', amount: 10000, splitAmong: 'all' }],
+    });
+    expect(byId(s).roundingSurplus).toBe(2);
+  });
+
+  it('나누어떨어지면 정확히 0 이다 (배지가 뜨면 안 된다)', () => {
+    const s = mkSettlement({
+      members: members('a', 'b', 'c', 'd'),
+      gameFeePerGame: 4000,
+      shoeFee: 2000,
+      shoeRenters: ['a'],
+      extras: [{ id: 'e1', label: '음료', amount: 12000, splitAmong: 'all' }],
+      rounds: [
+        mkRound({
+          id: 'r1',
+          participants: ['a', 'b', 'c', 'd'],
+          method: 'transfer',
+          losers: ['c', 'd'],
+          transferSource: 'gameFee', // pot 8,000 / 2명 = 정확히 4,000
+        }),
+      ],
+    });
+    const r = byId(s);
+    expect(r.roundingSurplus).toBe(0);
+    // 0 이라는 건 "덜 걷힌 것도 없다" 는 뜻이기도 하다
+    expect(sum(r.results.map((x) => x.rounded))).toBe(16000 + 2000 + 12000);
+  });
+
+  it('여러 나눗셈이 겹치면 각각의 초과분 합과 정확히 일치한다', () => {
+    const s = mkSettlement({
+      members: members('a', 'b', 'c', 'd', 'e'),
+      gameFeePerGame: 4000,
+      shoeFee: 0,
+      extras: [
+        { id: 'e1', label: '치킨', amount: 10000, splitAmong: 'all' }, // 2,000 × 5 → +0
+        { id: 'e2', label: '맥주', amount: 5000, splitAmong: ['a', 'b', 'c'] }, // 1,667 × 3 → +1
+      ],
+      rounds: [
+        mkRound({
+          id: 'r1',
+          participants: ['a', 'b', 'c', 'd', 'e'],
+          method: 'transfer',
+          losers: ['c', 'd', 'e'],
+          transferSource: 'gameFee', // pot 8,000 / 3명 → +1
+        }),
+      ],
+    });
+    const r = byId(s);
+    const expected =
+      (Math.ceil(10000 / 5) * 5 - 10000) +
+      (Math.ceil(5000 / 3) * 3 - 5000) +
+      (Math.ceil(8000 / 3) * 3 - 8000);
+    expect(expected).toBe(2);
+    expect(r.roundingSurplus).toBe(expected);
+  });
+
+  it('초과분은 나눗셈 한 번당 인원수 미만이라는 상한을 넘지 않는다', () => {
+    // 7명이 나눠 내는 기타비용 2건 → 각각 최대 6원, 합쳐도 12원을 넘을 수 없다
+    const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+    const s = mkSettlement({
+      members: members(...ids),
+      gameFeePerGame: 0,
+      shoeFee: 0,
+      extras: [
+        { id: 'e1', label: 'x', amount: 99999, splitAmong: 'all' },
+        { id: 'e2', label: 'y', amount: 7777, splitAmong: 'all' },
+      ],
+    });
+    const r = byId(s);
+    expect(r.roundingSurplus).toBe(
+      (Math.ceil(99999 / 7) * 7 - 99999) + (Math.ceil(7777 / 7) * 7 - 7777),
+    );
+    expect(r.roundingSurplus).toBeGreaterThanOrEqual(0);
+    expect(r.roundingSurplus).toBeLessThan(7 * 2);
+  });
+
+  // --- 아래 두 건은 "초과분"이 아닌 값이 roundingSurplus 에 섞이는 현 구현의 동작을 고정한다.
+  //     팀 리드에게 보고된 사안이며, 정의가 바뀌면 이 테스트가 먼저 빨개진다.
+  it('imbalance 가 있으면 roundingSurplus 에 -imbalance 가 섞인다 (현 구현 고정)', () => {
+    const s = mkSettlement({
+      members: members('a', 'b', 'c', 'd'),
+      gameFeePerGame: 4000,
+      shoeFee: 0,
+      rounds: [
+        // pot 4,000 인데 배당은 6,000 → imbalance +2,000
+        mkRound({
+          id: 'r1',
+          participants: ['a', 'b', 'c', 'd'],
+          method: 'pot',
+          ante: 1000,
+          payout: [6000],
+          ranking: [['a']],
+        }),
+      ],
+    });
+    const r = byId(s);
+    expect(r.totalImbalance).toBe(2000);
+    // 나눗셈 초과분은 0 인데도 roundingSurplus 가 0 이 아니다 — imbalance 가 그대로 새어 든다
+    expect(r.roundingSurplus).toBe(-2000);
+  });
+
+  it('분담 대상이 전원 빠진 기타비용은 roundingSurplus 를 음수로 만든다 (현 구현 고정)', () => {
+    const s = mkSettlement({
+      members: members('a'),
+      gameFeePerGame: 0,
+      shoeFee: 0,
+      extras: [{ id: 'e1', label: '유령', amount: 5000, splitAmong: ['ghost'] }],
+    });
+    const r = byId(s);
+    expect(r.of('a').extra).toBe(0);
+    // 아무도 내지 않은 5,000원이 "초과분 -5,000" 으로 표현된다 (실제로는 미수금이다)
+    expect(r.roundingSurplus).toBe(-5000);
   });
 });
 
@@ -782,13 +965,55 @@ function makeSettlement(rng: Rng, methods?: Round['method'][]): Settlement {
   });
 }
 
-/** 한 케이스에 대해 제로섬·총액 불변식을 검사하고, imbalance 0 여부를 반환한다 */
-function assertInvariants(s: Settlement): boolean {
+/**
+ * 한 transfer 라운드가 만드는 초과분을 **calc.ts 를 쓰지 않고** 독립적으로 계산한다.
+ *
+ * 랜덤 케이스에서 `Σ betDelta >= 0` 만 보면 거의 항상 참이라 아무것도 못 잡는다.
+ * Σ betDelta 가 정확히 얼마여야 하는지를 여기서 따로 구해 대조한다.
+ */
+function transferSurplusOf(round: Round, gameFeePerGame: number): number {
+  if (round.method !== 'transfer') return 0;
+  const participants = [...new Set(round.participants)];
+  const joined = new Set(participants);
+  const losers = [...new Set(round.losers)].filter((id) => joined.has(id));
+  const loserSet = new Set(losers);
+  const winners = participants.filter((id) => !loserSet.has(id));
+  if (losers.length === 0 || winners.length === 0) return 0;
+
+  const amount = round.transferSource === 'gameFee' ? gameFeePerGame : round.transferAmount;
+  const pot = amount * winners.length;
+  return Math.ceil(pot / losers.length) * losers.length - pot;
+}
+
+/** 기타비용 항목들이 만드는 초과분을 독립적으로 계산한다 */
+function extraSurplusOf(s: Settlement): number {
+  const known = new Set(s.members.map((m) => m.id));
+  let surplus = 0;
+  for (const item of s.extras) {
+    const n = (item.splitAmong === 'all' ? [...known] : item.splitAmong).filter((id) =>
+      known.has(id),
+    ).length;
+    // 분담 대상이 한 명도 없으면 아무도 내지 않는다 → 걷힌 금액이 항목 금액보다 부족하다
+    surplus += n === 0 ? -item.amount : Math.ceil(item.amount / n) * n - item.amount;
+  }
+  return surplus;
+}
+
+/**
+ * 한 케이스에 대해 총액 불변식을 검사하고, imbalance 0 여부를 반환한다.
+ *
+ * splitEvenly 가 전원 동일 정책으로 바뀐 뒤로 제로섬(`Σ betDelta === 0`)은 더 이상 성립하지 않는다.
+ * 대신 초과분이 **정확히 얼마인지**를 독립 계산과 대조한다.
+ */
+function assertInvariants(s: Settlement): { balanced: boolean; surplus: number } {
   const r = calculate(s);
   const totalBet = sum(r.results.map((x) => x.betDelta));
   const totalBase = sum(r.results.map((x) => x.gameFee + x.shoe + x.extra));
   const totalSub = sum(r.results.map((x) => x.subtotal));
   const totalRounded = sum(r.results.map((x) => x.rounded));
+
+  const betSurplus = sum(s.rounds.map((round) => transferSurplusOf(round, s.gameFeePerGame)));
+  const extraSurplus = extraSurplusOf(s);
 
   // 정수 입력이면 엔진 어디에도 부동소수 잔여가 남지 않는다 (R13).
   // toBeCloseTo 로 느슨하게 통과시키면 소수점 유출을 놓친다 — 전부 toBe 로 검사한다.
@@ -800,39 +1025,58 @@ function assertInvariants(s: Settlement): boolean {
     expect(Number.isInteger(row.adjustment)).toBe(true);
   }
 
-  // 항상 성립: Σ betDelta === -Σ imbalance
-  // (`toBe(-totalImbalance)` 는 imbalance 가 0 일 때 -0 과 +0 이 Object.is 로 갈려서 못 쓴다)
-  expect(totalBet + r.totalImbalance).toBe(0);
-  // 반올림은 총액을 바꾸지 않는다
+  // 초과분은 방향이 정해져 있다 — 항상 0 이상이고 절대 음수가 되지 않는다
+  expect(betSurplus).toBeGreaterThanOrEqual(0);
+  expect(extraSurplus).toBeGreaterThanOrEqual(0);
+
+  // 항상 성립: Σ betDelta + Σ imbalance === 판비 나눗셈이 만든 초과분
+  // (`toBe(betSurplus - totalImbalance)` 는 0 과 -0 이 Object.is 로 갈려서 못 쓴다)
+  expect(totalBet + r.totalImbalance).toBe(betSurplus);
+  // 반올림은 총액을 바꾸지 않는다 (초과분은 이미 splitEvenly 단계에서 반영됐다)
   expect(totalRounded).toBe(totalSub);
+  // roundingSurplus 가 실제 초과분과 정확히 일치한다
+  expect(r.roundingSurplus).toBe(betSurplus + extraSurplus - r.totalImbalance);
 
   if (r.totalImbalance === 0) {
-    expect(totalBet).toBe(0); // A4
-    expect(totalRounded).toBe(totalBase); // A5
-    return true;
+    expect(totalBet).toBe(betSurplus); // A4(개정): 제로섬 대신 "초과분만큼만 더 걷힌다"
+    // A5(개정): Σ rounded 는 Σ base 이상이고, 그 차이가 정확히 판비 나눗셈의 초과분이다
+    // (Σ base 안의 extra 에는 기타비용 초과분이 이미 반영돼 있다)
+    expect(totalRounded).toBe(totalBase + betSurplus);
+    expect(totalRounded).toBeGreaterThanOrEqual(totalBase);
+    expect(r.roundingSurplus).toBe(betSurplus + extraSurplus);
+    return { balanced: true, surplus: betSurplus + extraSurplus };
   }
-  return false;
+  return { balanced: false, surplus: betSurplus + extraSurplus };
 }
 
 describe('불변식 — 고정 시드 랜덤', () => {
-  it('A4/A5: 제로섬·총액 불변식 — 고정 시드 랜덤 200케이스', () => {
+  it('A4/A5: 총액·초과분 불변식 — 고정 시드 랜덤 200케이스', () => {
     const rng = makeRng(20260821);
     let balanced = 0;
+    let withSurplus = 0;
     for (let i = 0; i < 200; i++) {
-      if (assertInvariants(makeSettlement(rng))) balanced++;
+      const out = assertInvariants(makeSettlement(rng));
+      if (out.balanced) balanced++;
+      if (out.surplus > 0) withSurplus++;
     }
     // 균형 케이스가 실제로 충분히 생성되어야 테스트가 공허하지 않다
     expect(balanced).toBeGreaterThan(20);
+    // 초과분이 0 이 아닌 케이스도 충분해야 한다 — 전부 0 이면 위 대조가 아무것도 검증하지 못한다
+    expect(withSurplus).toBeGreaterThan(20);
   });
 
   it('A10: 혼합 정산(pot 2 / transfer 2 / none 1)에서도 A4·A5 불변식 유지 — 200케이스', () => {
     const rng = makeRng(777);
     const methods: Round['method'][] = ['pot', 'pot', 'transfer', 'transfer', 'none'];
     let balanced = 0;
+    let withSurplus = 0;
     for (let i = 0; i < 200; i++) {
-      if (assertInvariants(makeSettlement(rng, methods))) balanced++;
+      const out = assertInvariants(makeSettlement(rng, methods));
+      if (out.balanced) balanced++;
+      if (out.surplus > 0) withSurplus++;
     }
     expect(balanced).toBeGreaterThan(20);
+    expect(withSurplus).toBeGreaterThan(20);
   });
 
   it('A10: 혼합 정산 손계산 대조 — 5판 시나리오', () => {
@@ -906,7 +1150,7 @@ describe('불변식 — 고정 시드 랜덤', () => {
 // ---------------------------------------------------------------------------
 
 describe('calculate — 반올림 통합', () => {
-  it("B1': 나누어떨어지지 않는 기타비용도 합계가 정확히 보존된다", () => {
+  it("B1'': 나누어떨어지지 않는 기타비용은 전원 동일 금액이 되고 초과분만큼 더 걷힌다", () => {
     const ms = members('a', 'b', 'c');
     const s = mkSettlement({
       members: ms,
@@ -915,11 +1159,14 @@ describe('calculate — 반올림 통합', () => {
       extras: [{ id: 'e1', label: '음료', amount: 10000, splitAmong: 'all' }],
     });
     const r = byId(s);
-    expect(sum(r.results.map((x) => x.rounded))).toBe(10000);
-    // splitEvenly 가 앞사람부터 1원씩 얹으므로 a 가 1원 더 낸다
+    // splitEvenly 가 전원을 올리므로 셋 다 3,334 이고 합계가 10,002 다 (초과 2원)
     expect(r.of('a').rounded).toBe(3334);
-    expect(r.of('b').rounded).toBe(3333);
-    expect(r.of('c').rounded).toBe(3333);
+    expect(r.of('b').rounded).toBe(3334);
+    expect(r.of('c').rounded).toBe(3334);
+    expect(sum(r.results.map((x) => x.rounded))).toBe(10002);
+    expect(r.roundingSurplus).toBe(2);
+    // 올림은 splitEvenly 단계에서 끝났으므로 distributeWithRemainder 는 아무것도 조정하지 않는다
+    expect(sum(r.results.map((x) => x.adjustment))).toBe(0);
   });
 
   it('B3: 입력이 정수면 잔돈 조정이 아예 발생하지 않는다 (배지가 뜨면 안 된다)', () => {
@@ -1156,6 +1403,11 @@ describe('정산 모드 / 내기 모드 게이트', () => {
       expect(formatKRW(row.extra)).not.toContain('.');
       expect(row.adjustment).toBe(0); // "잔돈 조정 +0원" 배지가 뜨면 안 된다
     }
-    expect(sum(r.results.map((x) => x.extra))).toBe(13000);
+    // 13,000 / 6명 = 2,166.666… → 전원 2,167 이라 합계가 13,002 다 (초과 2원, 상한 6 미만)
+    expect(r.results.map((x) => x.extra)).toEqual([2167, 2167, 2167, 2167, 2167, 2167]);
+    expect(sum(r.results.map((x) => x.extra))).toBe(13002);
+    expect(sum(r.results.map((x) => x.extra)) - 13000).toBe(2);
+    // 판비 쪽(12,000 / 3명)은 나누어떨어지므로 초과분 전액이 기타비용에서 온다
+    expect(r.roundingSurplus).toBe(2);
   });
 });
