@@ -603,3 +603,65 @@ describe('영속성 (C1~C4): localStorage 라운드트립', () => {
     setSpy.mockRestore();
   });
 });
+
+describe('duplicateRound — 정산 모드에서는 내기 필드를 복제하지 않는다 (F4)', () => {
+  beforeEach(() => {
+    usePrefsStore.setState({ ...initialPrefs });
+    useSettlementStore.getState().resetSession();
+  });
+
+  it('정산 모드에서 복제한 판은 내기 필드가 비어 있다', () => {
+    const s = useSettlementStore.getState();
+    s.addMember('a');
+    s.addMember('b');
+    const memberId = useSettlementStore.getState().settlement.members[0]!.id;
+
+    s.addRound();
+    const r1 = useSettlementStore.getState().settlement.rounds[0]!.id;
+    s.setMethod(r1, 'pot');
+    s.setAnte(r1, 1000);
+    s.tapRank(r1, memberId);
+    s.setPayout(r1, [4000]);
+
+    // 정산 모드로 전환하면 내기 UI 는 숨겨지지만 "복제" 버튼은 남아 있다.
+    // 사용자에게 그 버튼은 "같은 멤버로 한 판 더" 라는 뜻이다.
+    s.setMode('normal');
+    s.duplicateRound(r1);
+
+    const copy = useSettlementStore.getState().settlement.rounds[1]!;
+    expect(copy.method).toBe('none');
+    expect(copy.ante).toBe(0);
+    expect(copy.payout).toEqual([]);
+    expect(copy.ranking).toEqual([]);
+    expect(copy.losers).toEqual([]);
+    // 참여자와 팀 편성은 모드와 무관하게 유용하므로 그대로 복제한다
+    expect(copy.participants).toEqual(copy.participants);
+    expect(copy.participants.length).toBeGreaterThan(0);
+
+    // 원본은 그대로 남아야 한다 (비파괴)
+    const original = useSettlementStore.getState().settlement.rounds[0]!;
+    expect(original.method).toBe('pot');
+    expect(original.payout).toEqual([4000]);
+  });
+
+  it('내기 모드에서 복제한 판은 내기 필드를 그대로 가져온다', () => {
+    const s = useSettlementStore.getState();
+    s.addMember('a');
+    s.addMember('b');
+    const memberId = useSettlementStore.getState().settlement.members[0]!.id;
+
+    s.addRound();
+    const r1 = useSettlementStore.getState().settlement.rounds[0]!.id;
+    s.setMethod(r1, 'pot');
+    s.setAnte(r1, 1000);
+    s.tapRank(r1, memberId);
+    s.setPayout(r1, [4000]);
+
+    s.duplicateRound(r1);
+    const copy = useSettlementStore.getState().settlement.rounds[1]!;
+    expect(copy.method).toBe('pot');
+    expect(copy.ante).toBe(1000);
+    expect(copy.payout).toEqual([4000]);
+    expect(copy.ranking).toEqual([[memberId]]);
+  });
+});

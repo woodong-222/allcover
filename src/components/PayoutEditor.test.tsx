@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { Round, Settlement } from '../types';
 import { roundDelta } from '../lib/calc';
 import { useSettlementStore } from '../store/useSettlementStore';
-import { PayoutEditor } from './PayoutEditor';
+import { PayoutEditor, distributeRemainder } from './PayoutEditor';
 
 const MEMBERS = [
   { id: 'a', name: '가나' },
@@ -305,5 +305,32 @@ describe('PayoutEditor — 배당액 정수 보장 (finding #3)', () => {
         }
       }
     }
+  });
+});
+
+describe('distributeRemainder — 탐색 상한 (2026-08-23 보안 검토 MEDIUM)', () => {
+  /**
+   * 4단계 정수 해 탐색의 window 는 잔액에 선형 비례한다. 상한이 없으면 배당액 10억 입력 시
+   * 7.5억 회를 돌아 메인 스레드가 10초 넘게 멈춘다. 게다가 PayoutEditor 가 매 렌더마다
+   * 이 함수를 부르고 payout 은 localStorage 에 저장되므로, 새로고침해도 같은 값으로 다시
+   * 멈춰 앱이 영구적으로 못 쓰게 된다.
+   */
+  it('배당액이 아무리 커도 유한 시간 안에 반환한다', () => {
+    const started = Date.now();
+    const out = distributeRemainder([1_000_000_000, 0, 0], [3, 4, 5], 7000);
+    const elapsed = Date.now() - started;
+
+    // 상한을 지우면 이 케이스가 수 초~수십 초 걸린다. 넉넉히 잡아도 2초를 넘으면 실패다.
+    expect(elapsed).toBeLessThan(2000);
+    expect(out).toHaveLength(3);
+    expect(out.every(Number.isInteger)).toBe(true);
+  });
+
+  it('상한에 걸려도 음수 배당을 만들지 않는다', () => {
+    // 상한 소진 시 5단계(최대한 담고 잔액은 남긴다)로 떨어지는데, 그 경로가 배당을
+    // 음수로 만들면 사용자가 돈을 돌려받는 이상한 결과가 된다.
+    const out = distributeRemainder([2_000_000_000, 0], [7, 11], 5000);
+    expect(out.every((p) => p >= 0)).toBe(true);
+    expect(out.every(Number.isInteger)).toBe(true);
   });
 });

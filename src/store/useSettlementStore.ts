@@ -201,14 +201,23 @@ export const useSettlementStore = create<SettlementState>()(
           const idx = rounds.findIndex((r) => r.id === roundId);
           if (idx === -1) return state;
           const original = rounds[idx];
+          // addRound 의 inheritBetFields 와 같은 규칙이다. 두 곳이 갈리면 안 된다.
+          const copyBetFields = state.settlement.mode !== 'normal';
           const copy: Round = {
             ...original,
             id: nanoid(),
             participants: [...original.participants],
             teams: original.teams ? original.teams.map((t) => [...t]) : null,
-            payout: [...original.payout],
-            ranking: original.ranking.map((g) => [...g]),
-            losers: [...original.losers],
+            // 정산 모드에서는 내기 UI 가 숨겨져 있으므로 "복제" 는 사용자에게 "같은 멤버로
+            // 한 판 더" 라는 뜻이다. 내기 필드까지 복사하면 사용자가 입력한 적 없는 판돈·배당이
+            // 내기 모드로 돌아왔을 때 계산에 반영된다. addRound 가 G2 로 막은 구멍과 같다 (F4).
+            ...(copyBetFields
+              ? {
+                  payout: [...original.payout],
+                  ranking: original.ranking.map((g) => [...g]),
+                  losers: [...original.losers],
+                }
+              : { method: 'none' as const, ante: 0, payout: [], ranking: [], losers: [] }),
           };
           const next = [...rounds];
           next.splice(idx + 1, 0, copy);

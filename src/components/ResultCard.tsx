@@ -38,6 +38,10 @@ export type ResultCardProps = {
   results: MemberResult[];
   breakdowns: RoundBreakdown[];
   totalImbalance: number;
+  /** 전원이 같은 금액을 내도록 올려서 더 걷힌 금액. 0 이면 표시하지 않는다 */
+  roundingSurplus?: number;
+  /** 분담 대상이 한 명도 남지 않아 아무에게도 청구되지 않은 기타비용 항목 */
+  unassignedExtras?: { label: string; amount: number }[];
 };
 
 /** memberId -> 이름 조회. 못 찾으면 id 그대로 표시(크래시 방지) */
@@ -80,7 +84,7 @@ function describeRoundBet(
 }
 
 export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function ResultCard(
-  { settlement, results, breakdowns, totalImbalance },
+  { settlement, results, breakdowns, totalImbalance, roundingSurplus = 0, unassignedExtras = [] },
   ref,
 ) {
   const { date, title, members, rounds, gameFeePerGame, mode } = settlement;
@@ -143,6 +147,24 @@ export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function R
               . 참여 인원을 바꾸면 판돈 총액이 달라지므로, 해당 판의 배당을 다시 확인해주세요.
             </p>
           )}
+        </div>
+      )}
+
+      {/*
+       * 분담 대상이 전원 삭제된 기타비용. 그 금액은 아무에게도 청구되지 않아 정산에서
+       * 사라지므로, 사용자가 실제로 그만큼 덜 걷게 된다. 반드시 드러내야 한다 (F3).
+       */}
+      {unassignedExtras.length > 0 && (
+        <div
+          data-testid="unassigned-extras-warning"
+          className="mb-4 rounded-lg px-3 py-2 text-sm font-medium"
+          style={{ backgroundColor: 'var(--card-accent-soft)', color: 'var(--card-positive)' }}
+        >
+          <p>⚠ 분담할 사람이 없어 아무도 내지 않는 항목이 있습니다</p>
+          <p className="mt-1 text-xs font-normal">
+            {unassignedExtras.map((e) => `${e.label} ${formatKRW(e.amount)}`).join(', ')}. 아래
+            총액에 포함되지 않았습니다 — 분담 대상을 다시 지정해주세요.
+          </p>
         </div>
       )}
 
@@ -210,6 +232,22 @@ export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function R
         <span style={{ color: 'var(--card-muted)' }}>총액</span>
         <span className="text-lg font-bold">{formatKRW(total)}</span>
       </div>
+
+      {/*
+       * 전원이 같은 금액을 내도록 1원 단위로 올린 결과 실제 결제액보다 더 걷힌 금액.
+       * 나눗셈 한 번당 최대 (인원-1)원이라 보통 1~2원이다. 금액은 사소하지만,
+       * "한 명만 1원 덜 내는 것보다 낫다"는 결정의 전제가 바로 이 노출이다 (F1).
+       */}
+      {roundingSurplus !== 0 && (
+        <p
+          data-testid="rounding-surplus-note"
+          className="mt-1 text-right text-xs"
+          style={{ color: 'var(--card-muted)' }}
+        >
+          인원수로 나누어떨어지지 않아 전원 같은 금액으로 올렸습니다 — 실제 결제액보다{' '}
+          {formatKRW(Math.abs(roundingSurplus))} 더 걷힙니다
+        </p>
+      )}
 
       {/* 판별 내기 요약 (D7) — 정산 모드에서는 숨긴다 (G4) */}
       {!hideBet && rounds.length > 0 && (

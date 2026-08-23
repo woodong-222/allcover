@@ -105,6 +105,11 @@ export type RoundBreakdown = {
    * 0 이어야 정상이며, 0 이 아니면 UI가 경고를 띄운다. 절대 조용히 감추지 않는다.
    */
   imbalance: number;
+  /**
+   * transfer 방식에서 진 쪽 인원으로 나누어떨어지지 않아 올림으로 더 걷힌 금액.
+   * 최대 (진 쪽 인원 - 1)원. pot 방식은 나눗셈을 쓰지 않으므로 항상 0 이다.
+   */
+  surplus: number;
 };
 
 export type MemberResult = {
@@ -136,4 +141,11 @@ export type CalcResult = {
    * 결과이며(2026-08-21 사용자 결정), 조용히 사라지지 않도록 여기로 드러낸다.
    */
   roundingSurplus: number;
+  /**
+   * 분담 대상이 한 명도 남지 않은 기타비용 항목.
+   *
+   * 지정 멤버가 전원 삭제되면 그 항목은 아무에게도 청구되지 않아 금액이 정산에서
+   * 조용히 사라진다. 사용자는 그만큼 덜 걷게 되므로 반드시 화면에 드러내야 한다.
+   */
+  unassignedExtras: { label: string; amount: number }[];
 };

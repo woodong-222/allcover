@@ -210,8 +210,8 @@ describe('ResultCard', () => {
     ];
     const settlement = makeSettlement({ members, rounds });
     const breakdowns: RoundBreakdown[] = [
-      { roundId: 'r1', delta: { m1: 0, m2: 0 }, imbalance: 1000 },
-      { roundId: 'r2', delta: { m1: 0, m2: 0 }, imbalance: -500 },
+      { roundId: 'r1', delta: { m1: 0, m2: 0 }, imbalance: 1000, surplus: 0 },
+      { roundId: 'r2', delta: { m1: 0, m2: 0 }, imbalance: -500, surplus: 0 },
     ];
     render(
       <ResultCard
@@ -366,7 +366,7 @@ describe('ResultCard', () => {
           {...baseCardProps}
           settlement={settlement}
           results={members.map((m) => makeResult(m.id, { betDelta: 0 }))}
-          breakdowns={[{ roundId: 'r1', delta: { m1: 0, m2: 0 }, imbalance: 0 }]}
+          breakdowns={[{ roundId: 'r1', delta: { m1: 0, m2: 0 }, imbalance: 0, surplus: 0 }]}
           totalImbalance={0}
         />,
       );

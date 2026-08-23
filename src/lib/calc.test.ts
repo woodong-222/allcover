@@ -817,9 +817,12 @@ describe('roundingSurplus — 더 걷힌 금액이 정확히 드러난다', () =
     expect(r.roundingSurplus).toBeLessThan(7 * 2);
   });
 
-  // --- 아래 두 건은 "초과분"이 아닌 값이 roundingSurplus 에 섞이는 현 구현의 동작을 고정한다.
-  //     팀 리드에게 보고된 사안이며, 정의가 바뀌면 이 테스트가 먼저 빨개진다.
-  it('imbalance 가 있으면 roundingSurplus 에 -imbalance 가 섞인다 (현 구현 고정)', () => {
+  // --- 아래 두 건은 F2 회귀 방지다.
+  //     초기 구현은 roundingSurplus 를 `Σ rounded - 실제결제액` 으로 역산했는데, 그 식에는
+  //     pot 라운드의 -imbalance 와 분담 대상 없는 기타비용 미수금이 함께 섞여 들어갔다.
+  //     그 값을 화면에 내보내면 "올림으로 더 걷힌 금액: -2,000원" 같은 거짓말이 공유 이미지에
+  //     박힌다. 지금은 splitEvenly 호출 지점에서 초과분만 직접 누적한다.
+  it('F2: 배당 불일치(imbalance)는 roundingSurplus 에 섞이지 않는다', () => {
     const s = mkSettlement({
       members: members('a', 'b', 'c', 'd'),
       gameFeePerGame: 4000,
@@ -838,11 +841,12 @@ describe('roundingSurplus — 더 걷힌 금액이 정확히 드러난다', () =
     });
     const r = byId(s);
     expect(r.totalImbalance).toBe(2000);
-    // 나눗셈 초과분은 0 인데도 roundingSurplus 가 0 이 아니다 — imbalance 가 그대로 새어 든다
-    expect(r.roundingSurplus).toBe(-2000);
+    // 이 판은 나눗셈을 전혀 쓰지 않으므로 올림 초과분은 정확히 0 이다.
+    // imbalance 는 별도 필드로 이미 드러나 있고, 여기 섞이면 안 된다.
+    expect(r.roundingSurplus).toBe(0);
   });
 
-  it('분담 대상이 전원 빠진 기타비용은 roundingSurplus 를 음수로 만든다 (현 구현 고정)', () => {
+  it('F3: 분담 대상이 전원 빠진 기타비용은 미수금으로 드러나고 초과분에 섞이지 않는다', () => {
     const s = mkSettlement({
       members: members('a'),
       gameFeePerGame: 0,
@@ -850,9 +854,24 @@ describe('roundingSurplus — 더 걷힌 금액이 정확히 드러난다', () =
       extras: [{ id: 'e1', label: '유령', amount: 5000, splitAmong: ['ghost'] }],
     });
     const r = byId(s);
+    // 아무에게도 청구되지 않는다 — 이 자체는 막지 않는다(사용자가 대상을 다시 지정해야 한다)
     expect(r.of('a').extra).toBe(0);
-    // 아무도 내지 않은 5,000원이 "초과분 -5,000" 으로 표현된다 (실제로는 미수금이다)
-    expect(r.roundingSurplus).toBe(-5000);
+    // 다만 조용히 사라지면 안 된다. 전용 필드로 드러내 UI 가 경고를 띄운다.
+    expect(r.unassignedExtras).toEqual([{ label: '유령', amount: 5000 }]);
+    // 미수금은 "올림으로 더 걷힌 금액" 이 아니다
+    expect(r.roundingSurplus).toBe(0);
+  });
+
+  it('F3: 분담 대상이 남아 있으면 unassignedExtras 가 비어 있다', () => {
+    const s = mkSettlement({
+      members: members('a', 'b'),
+      gameFeePerGame: 0,
+      shoeFee: 0,
+      extras: [{ id: 'e1', label: '맥주', amount: 5000, splitAmong: ['a'] }],
+    });
+    const r = byId(s);
+    expect(r.unassignedExtras).toEqual([]);
+    expect(r.of('a').extra).toBe(5000);
   });
 });
 
@@ -993,8 +1012,9 @@ function extraSurplusOf(s: Settlement): number {
     const n = (item.splitAmong === 'all' ? [...known] : item.splitAmong).filter((id) =>
       known.has(id),
     ).length;
-    // 분담 대상이 한 명도 없으면 아무도 내지 않는다 → 걷힌 금액이 항목 금액보다 부족하다
-    surplus += n === 0 ? -item.amount : Math.ceil(item.amount / n) * n - item.amount;
+    // 분담 대상이 한 명도 없으면 나눗셈 자체가 없으므로 올림 초과분도 0 이다.
+    // 그 항목은 미수금이며 unassignedExtras 로 따로 드러난다 — 초과분에 섞지 않는다 (F2/F3).
+    surplus += n === 0 ? 0 : Math.ceil(item.amount / n) * n - item.amount;
   }
   return surplus;
 }
@@ -1034,8 +1054,8 @@ function assertInvariants(s: Settlement): { balanced: boolean; surplus: number }
   expect(totalBet + r.totalImbalance).toBe(betSurplus);
   // 반올림은 총액을 바꾸지 않는다 (초과분은 이미 splitEvenly 단계에서 반영됐다)
   expect(totalRounded).toBe(totalSub);
-  // roundingSurplus 가 실제 초과분과 정확히 일치한다
-  expect(r.roundingSurplus).toBe(betSurplus + extraSurplus - r.totalImbalance);
+  // roundingSurplus 는 **올림 초과분만** 담는다. imbalance 나 미수금이 섞이면 안 된다 (F2).
+  expect(r.roundingSurplus).toBe(betSurplus + extraSurplus);
 
   if (r.totalImbalance === 0) {
     expect(totalBet).toBe(betSurplus); // A4(개정): 제로섬 대신 "초과분만큼만 더 걷힌다"

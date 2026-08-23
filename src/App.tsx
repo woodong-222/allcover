@@ -44,7 +44,7 @@ export default function App() {
     getPersistenceSnapshot
   );
 
-  const { results, breakdowns, totalImbalance } = useMemo(
+  const { results, breakdowns, totalImbalance, roundingSurplus, unassignedExtras } = useMemo(
     () => calculate(settlement),
     [settlement]
   );
@@ -208,6 +208,8 @@ export default function App() {
                   results={results}
                   breakdowns={breakdowns}
                   totalImbalance={totalImbalance}
+                  roundingSurplus={roundingSurplus}
+                  unassignedExtras={unassignedExtras}
                 />
               </div>
             </>

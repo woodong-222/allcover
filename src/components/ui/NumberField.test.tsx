@@ -74,3 +74,37 @@ describe('NumberField', () => {
     expect(lastValue).toBe(23345);
   });
 });
+
+describe('NumberField — 상한 클램프 (2026-08-23 보안 검토 MEDIUM)', () => {
+  it('기본 상한 1억을 넘는 값은 잘려서 저장되고 화면 표시도 함께 잘린다', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<NumberField label="배당" value={0} onChange={onChange} />);
+
+    const input = screen.getByLabelText('배당');
+    await user.type(input, '999999999999');
+
+    // 상한이 없으면 이 값이 그대로 상태에 들어가 PayoutEditor 의 탐색 루프를 폭발시킨다.
+    expect(onChange).toHaveBeenLastCalledWith(100_000_000);
+    // 저장값과 화면이 어긋나면 사용자가 무엇이 반영됐는지 알 수 없다
+    expect((input as HTMLInputElement).value).toBe('100,000,000');
+  });
+
+  it('상한 이하 값은 그대로 통과한다', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<NumberField label="배당" value={0} onChange={onChange} />);
+
+    await user.type(screen.getByLabelText('배당'), '4000');
+    expect(onChange).toHaveBeenLastCalledWith(4000);
+  });
+
+  it('max 를 직접 넘기면 그 값이 적용된다', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<NumberField label="배당" value={0} onChange={onChange} max={500} />);
+
+    await user.type(screen.getByLabelText('배당'), '9999');
+    expect(onChange).toHaveBeenLastCalledWith(500);
+  });
+});
