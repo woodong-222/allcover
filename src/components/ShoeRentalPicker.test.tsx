@@ -63,3 +63,40 @@ describe('ShoeRentalPicker', () => {
     expect(label?.className).toMatch(/min-w-11/);
   });
 });
+
+describe('ShoeRentalPicker — 접이식 (2026-08-24 사용자 요청)', () => {
+  beforeEach(() => {
+    usePrefsStore.setState({ ...initialPrefs });
+    useSettlementStore.getState().resetSession();
+  });
+
+  function detailsEl() {
+    return document.querySelector('details');
+  }
+
+  it('대여자가 없으면 접힌 상태로 시작한다', () => {
+    useSettlementStore.getState().addMember('가');
+    useSettlementStore.getState().setFees({ shoeFee: 2000 });
+    render(<ShoeRentalPicker />);
+    expect(detailsEl()?.hasAttribute('open')).toBe(false);
+  });
+
+  it('대여자가 있으면 펼친 상태로 시작하고 요약에 인원과 금액이 나온다', () => {
+    useSettlementStore.getState().addMember('가');
+    useSettlementStore.getState().setFees({ shoeFee: 2000 });
+    const id = useSettlementStore.getState().settlement.members[0]!.id;
+    useSettlementStore.getState().toggleShoeRenter(id);
+
+    render(<ShoeRentalPicker />);
+    expect(detailsEl()?.hasAttribute('open')).toBe(true);
+    const summary = document.querySelector('summary');
+    expect(summary?.textContent).toContain('1명');
+    expect(summary?.textContent).toContain('2,000원');
+  });
+
+  it('대여자가 없으면 요약이 "선택 사항"이다', () => {
+    useSettlementStore.getState().addMember('가');
+    render(<ShoeRentalPicker />);
+    expect(document.querySelector('summary')?.textContent).toContain('선택 사항');
+  });
+});

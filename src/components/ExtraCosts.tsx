@@ -16,6 +16,7 @@
 import { useState } from 'react';
 import { useSettlementStore } from '../store/useSettlementStore';
 import { NumberField } from './ui/NumberField';
+import { CollapsibleSection } from './ui/CollapsibleSection';
 import { formatKRW } from '../lib/format';
 import type { Extra } from '../types';
 
@@ -54,31 +55,12 @@ export function ExtraCosts() {
   }
 
   return (
-    <details open={extras.length > 0} className="group rounded-xl border bg-white">
-      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 rounded-xl p-4 [&::-webkit-details-marker]:hidden">
-        <span className="flex items-baseline gap-1">
-          <h2 className="text-lg font-semibold text-slate-900">기타 비용</h2>
-          <span className="text-sm font-normal text-slate-500">
-            {extras.length > 0 ? `· ${extras.length}건 · ${formatKRW(total)}` : '· 선택 사항'}
-          </span>
-        </span>
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 20 20"
-          fill="none"
-          className="h-5 w-5 shrink-0 text-slate-400 transition-transform duration-200 group-open:rotate-90"
-        >
-          <path
-            d="M7 5l6 5-6 5"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </summary>
-
-      <div className="px-4 pb-4">
+    <CollapsibleSection
+      title="기타 비용"
+      summary={extras.length > 0 ? `· ${extras.length}건 · ${formatKRW(total)}` : '· 선택 사항'}
+      defaultOpen={extras.length > 0}
+    >
+      <div>
         <div className="flex flex-col gap-3">
           <div>
             <label htmlFor="extra-label" className="mb-1 block text-sm font-medium text-slate-700">
@@ -187,6 +169,6 @@ export function ExtraCosts() {
 
         <p className="mt-3 text-sm font-medium text-slate-900">총 기타비용: {formatKRW(total)}</p>
       </div>
-    </details>
+    </CollapsibleSection>
   );
 }
