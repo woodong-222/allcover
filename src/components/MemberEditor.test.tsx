@@ -162,3 +162,44 @@ describe('MemberEditor', () => {
     expect(chip?.className).not.toMatch(/w-full/);
   });
 });
+
+describe('MemberEditor — 칩 내부 탭 대상 히트 영역 (2026-08-24 브라우저 실측)', () => {
+  beforeEach(() => {
+    usePrefsStore.setState({ ...initialPrefs });
+    useSettlementStore.getState().resetSession();
+  });
+
+  /**
+   * 실제 손가락이 닿는 건 칩 컨테이너가 아니라 그 안의 이름 버튼이다.
+   * 컨테이너에만 min-h-11/min-w-11 을 걸고 안쪽 버튼을 min-h-9 로 두면
+   * 한 글자 이름에서 28x36px 이 되어 E2 를 못 채운다 — 실제 브라우저에서 그렇게 나왔다.
+   * 컨테이너만 검사하던 기존 테스트는 이 결함을 통과시켰다.
+   */
+  it('E2: 한 글자 이름의 이름 버튼도 44px 최소 크기를 갖는다', () => {
+    useSettlementStore.getState().addMember('가');
+    render(<MemberEditor />);
+
+    // "가" 는 참여자 칩과 최근 멤버 칩 양쪽에 있다. 둘 다 탭 대상이므로 전부 검사한다.
+    const buttons = screen.getAllByRole('button', { name: '가' });
+    expect(buttons.length).toBeGreaterThan(0);
+    for (const b of buttons) {
+      expect(b.className).toContain('min-h-11');
+      expect(b.className).toContain('min-w-11');
+    }
+  });
+
+  it('E2: 인라인 편집 입력도 44px 높이를 갖는다', async () => {
+    const user = userEvent.setup();
+    useSettlementStore.getState().addMember('가');
+    render(<MemberEditor />);
+
+    // 최근 멤버 칩(점선 테두리)은 "추가" 동작이라 편집이 안 열린다. 참여자 칩을 골라야 한다.
+    const chipNameButton = screen
+      .getAllByRole('button', { name: '가' })
+      .find((b) => !b.className.includes('border-dashed'));
+    expect(chipNameButton).toBeDefined();
+    await user.click(chipNameButton!);
+    const input = screen.getByDisplayValue('가');
+    expect(input.className).toContain('min-h-11');
+  });
+});

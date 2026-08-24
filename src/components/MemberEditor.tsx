@@ -77,14 +77,16 @@ function MemberChip({ id, name, duplicate, onRename, onRemove }: MemberChipProps
             onChange={(e: ChangeEvent<HTMLInputElement>) => setText(e.target.value)}
             onKeyDown={handleKeyDown}
             onBlur={commit}
-            className="min-h-9 min-w-0 max-w-[10rem] rounded-full border border-slate-300 px-2 text-slate-900"
+            className="min-h-11 min-w-0 max-w-[10rem] rounded-full border border-slate-300 px-2 text-slate-900"
           />
         </>
       ) : (
+        /* 실제 탭 대상은 칩 컨테이너가 아니라 이 버튼이다. 컨테이너만 44px 로 두면
+           한 글자 이름에서 28×36px 이 되어 E2 를 못 채운다 (2026-08-24 브라우저 실측). */
         <button
           type="button"
           onClick={() => setEditing(true)}
-          className="min-h-9 max-w-[8rem] truncate rounded-full px-2 text-sm font-medium text-slate-800"
+          className="min-h-11 min-w-11 max-w-[8rem] truncate rounded-full px-2 text-sm font-medium text-slate-800"
         >
           {name}
         </button>
