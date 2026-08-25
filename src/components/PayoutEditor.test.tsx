@@ -42,7 +42,6 @@ function seed(round: Round): void {
     version: 1,
     id: 's1',
     date: '2026-08-21T00:00:00.000Z',
-    mode: 'bet',
     members: MEMBERS,
     gameFeePerGame: 4000,
     shoeFee: 2000,

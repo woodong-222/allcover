@@ -71,8 +71,14 @@ function isValidEnvelope(value: unknown): value is { version: number; state: unk
  * 버전이 현재 버전과 같으면 zustand persist는 `migrate`를 아예 호출하지 않고 이 state를
  * 그대로 쓰기 때문에, 형태 검증을 여기서 하지 않으면 `{settlement:null}` 같은 값이 그대로
  * 스토어에 들어가 렌더 중 TypeError로 이어질 수 있다 (C3가 막으려는 크래시).
+ *
+ * **저장된 버전을 함께 넘긴다**: 이 검사는 옛 버전 값에도 걸리는데, 옛 스키마는 당연히
+ * 현재 모양이 아니다. 버전을 안 주면 스토어가 "현재 스키마 기준"으로 검사하다가 정상적인
+ * 마이그레이션 대상을 손상으로 오인해 백업 후 초기화한다 — 진행 중인 정산이 날아간다.
  */
-export function createGuardedStorage<T>(isValidState?: (state: unknown) => boolean): PersistStorage<T> {
+export function createGuardedStorage<T>(
+  isValidState?: (state: unknown, version: number) => boolean
+): PersistStorage<T> {
   return {
     getItem: (name) => {
       const raw = safeGet(name);
@@ -93,7 +99,7 @@ export function createGuardedStorage<T>(isValidState?: (state: unknown) => boole
         return null;
       }
 
-      if (isValidState && !isValidState(parsed.state)) {
+      if (isValidState && !isValidState(parsed.state, parsed.version)) {
         backupCorruptRaw(raw);
         safeRemove(name);
         return null;

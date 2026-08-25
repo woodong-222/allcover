@@ -106,7 +106,6 @@ describe('통합 시나리오 — 계획서 §6-5 (8명 / 5판)', () => {
     expect(s.gameFeePerGame).toBe(4000);
     expect(s.shoeFee).toBe(2000);
     expect(s.shoeRenters).toHaveLength(3);
-    expect(s.mode).toBe('bet');
     expect(s.rounds).toHaveLength(5);
 
     const [p1, p2, p3, p4, p5] = s.rounds;

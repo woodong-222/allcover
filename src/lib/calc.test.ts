@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { calculate, roundDelta } from './calc';
+import { splitEvenly } from './money';
 import { formatKRW, formatSigned } from './format';
-import type { Extra, Member, Round, Settlement, SettlementMode } from '../types';
+import type { Extra, Member, Round, Settlement } from '../types';
 
 // ---------------------------------------------------------------------------
 // 테스트 픽스처 헬퍼
@@ -35,7 +36,6 @@ function mkSettlement(patch: Partial<Settlement> & { members: Member[] }): Settl
     shoeRenters: [],
     rounds: [],
     extras: [],
-    mode: 'bet',
     ...patch,
   };
 }
@@ -54,6 +54,15 @@ function byId(s: Settlement) {
 }
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+
+/**
+ * 옛 `amount` + `splitAmong` 픽스처를 새 `amounts` 맵으로 옮길 때 쓰는 헬퍼.
+ * 앱의 분배 규칙과 같게 `splitEvenly`(전원 동일 금액, 올림)를 쓴다.
+ */
+function evenAmounts(amount: number, ids: string[]): Record<string, number> {
+  const shares = splitEvenly(amount, ids.length);
+  return Object.fromEntries(ids.map((id, i) => [id, shares[i]]));
+}
 const deltaSum = (d: Record<string, number>) => sum(Object.values(d));
 
 // ---------------------------------------------------------------------------
@@ -600,7 +609,7 @@ describe('참여 범위와 엣지 케이스', () => {
 describe('기타비용 분담', () => {
   it("A11: splitAmong 'all' 12,000원 / 5명 / 반올림 100원 → 각 2,400원, 오차 0", () => {
     const ms = members('a', 'b', 'c', 'd', 'e');
-    const extras: Extra[] = [{ id: 'e1', label: '음료', amount: 12000, splitAmong: 'all' }];
+    const extras: Extra[] = [{ id: 'e1', label: '음료', amounts: evenAmounts(12000, ['a', 'b', 'c', 'd', 'e']) }];
     const s = mkSettlement({ members: ms, extras });
     const r = byId(s);
     for (const m of ms) expect(r.of(m.id).extra).toBe(2400);
@@ -612,7 +621,7 @@ describe('기타비용 분담', () => {
   it('기타비용 지정 분담: 대상자만 나눠 낸다', () => {
     const s = mkSettlement({
       members: members('a', 'b', 'c'),
-      extras: [{ id: 'e1', label: '맥주', amount: 9000, splitAmong: ['a', 'b'] }],
+      extras: [{ id: 'e1', label: '맥주', amounts: evenAmounts(9000, ['a', 'b']) }],
     });
     const r = byId(s);
     expect(r.of('a').extra).toBe(4500);
@@ -625,7 +634,7 @@ describe('기타비용 분담', () => {
     const ms = members('a', 'b', 'c');
     const s = mkSettlement({
       members: ms,
-      extras: [{ id: 'e1', label: '치킨', amount: 10000, splitAmong: 'all' }],
+      extras: [{ id: 'e1', label: '치킨', amounts: evenAmounts(10000, ['a', 'b', 'c']) }],
     });
     const r = byId(s);
     // 3,333.333… 을 올려 전원 3,334. 이전 정책의 3,334 / 3,333 / 3,333 과 달리 아무도 덜 내지 않는다
@@ -633,13 +642,15 @@ describe('기타비용 분담', () => {
     expect(sum(r.results.map((x) => x.extra))).toBe(10002);
     expect(sum(r.results.map((x) => x.extra)) - 10000).toBe(2); // 상한 3 미만
     expect(sum(r.results.map((x) => x.rounded))).toBe(10002);
-    expect(r.roundingSurplus).toBe(2);
+    // 기타비용은 입력 시점에 이미 사람별 금액으로 확정되므로 계산 단계에서 나눗셈이 없다.
+    // 따라서 roundingSurplus 에 기여하지 않는다 — 올림 초과분은 transfer 라운드에서만 나온다.
+    expect(r.roundingSurplus).toBe(0);
   });
 
   it("B5'/B6': 나누어떨어지지 않는 기타비용도 전 항목이 정수이고 표시에 소수점이 없다", () => {
     const s = mkSettlement({
       members: members('a', 'b', 'c'),
-      extras: [{ id: 'e1', label: '치킨', amount: 10000, splitAmong: 'all' }],
+      extras: [{ id: 'e1', label: '치킨', amounts: evenAmounts(10000, ['a', 'b', 'c']) }],
     });
     const r = byId(s);
     for (const row of r.results) {
@@ -660,7 +671,7 @@ describe('기타비용 분담', () => {
       for (const amount of [10000, 12000, 7777, 1, 99999]) {
         const s = mkSettlement({
           members: members(...ids.slice(0, count)),
-          extras: [{ id: 'e1', label: 'x', amount, splitAmong: 'all' }],
+          extras: [{ id: 'e1', label: 'x', amounts: evenAmounts(amount, ids.slice(0, count)) }],
         });
         const r = byId(s);
         const shares = r.results.map((x) => x.extra);
@@ -670,7 +681,9 @@ describe('기타비용 분담', () => {
         expect(sum(shares)).toBe(amount + expectedSurplus);
         expect(sum(shares)).toBeGreaterThanOrEqual(amount);
         expect(sum(shares) - amount).toBeLessThan(count); // 상한: 분담 인원 미만
-        expect(r.roundingSurplus).toBe(expectedSurplus);
+        // 사람별 금액은 입력에서 이미 확정됐다 — 합계는 초과분만큼 커지지만
+        // 그 올림은 계산 엔진이 한 게 아니므로 roundingSurplus 는 0 이다.
+        expect(r.roundingSurplus).toBe(0);
 
         expect(r.results.every((x) => Number.isInteger(x.extra))).toBe(true);
         // 전원 동일 — "차이 1원 이하" 가 아니라 차이 0 이다
@@ -683,12 +696,12 @@ describe('기타비용 분담', () => {
     expect(withSurplus).toBe(20);
   });
 
-  it('기타비용 여러 건이 겹치면 초과분이 항목별 초과분의 합과 일치한다', () => {
+  it('기타비용 여러 건이 겹쳐도 사람별 금액이 그대로 합산된다', () => {
     const s = mkSettlement({
       members: members('a', 'b', 'c'),
       extras: [
-        { id: 'e1', label: '치킨', amount: 10000, splitAmong: 'all' }, // 3,334 × 3 = 10,002 (+2)
-        { id: 'e2', label: '맥주', amount: 5000, splitAmong: ['a', 'b'] }, // 2,500 × 2 = 5,000 (+0)
+        { id: 'e1', label: '치킨', amounts: evenAmounts(10000, ['a', 'b', 'c']) }, // 3,334 × 3 = 10,002 (+2)
+        { id: 'e2', label: '맥주', amounts: evenAmounts(5000, ['a', 'b']) }, // 2,500 × 2 = 5,000 (+0)
       ],
     });
     const r = byId(s);
@@ -698,13 +711,14 @@ describe('기타비용 분담', () => {
     expect(r.of('c').extra).toBe(3334);
     expect(r.results.every((x) => Number.isInteger(x.extra))).toBe(true);
     // 초과분은 두 나눗셈의 초과분 합(2 + 0)과 정확히 같다
-    expect(r.roundingSurplus).toBe(2 + 0);
+    // 기타비용은 계산 단계에서 나눗셈을 하지 않으므로 초과분에 기여하지 않는다
+    expect(r.roundingSurplus).toBe(0);
   });
 
   it('분담 대상이 모두 멤버에서 빠진 기타비용은 무시되고 크래시하지 않는다', () => {
     const s = mkSettlement({
       members: members('a'),
-      extras: [{ id: 'e1', label: '유령', amount: 5000, splitAmong: ['ghost'] }],
+      extras: [{ id: 'e1', label: '유령', amounts: evenAmounts(5000, ['ghost']) }],
     });
     const r = byId(s);
     expect(r.of('a').extra).toBe(0);
@@ -741,9 +755,11 @@ describe('roundingSurplus — 더 걷힌 금액이 정확히 드러난다', () =
       members: members('a', 'b', 'c'),
       gameFeePerGame: 0,
       shoeFee: 0,
-      extras: [{ id: 'e1', label: '치킨', amount: 10000, splitAmong: 'all' }],
+      extras: [{ id: 'e1', label: '치킨', amounts: evenAmounts(10000, ['a', 'b', 'c']) }],
     });
-    expect(byId(s).roundingSurplus).toBe(2);
+    // 기타비용은 입력 시점에 이미 사람별 금액으로 확정되므로 계산 단계에서 나눗셈이 없다.
+    // 따라서 roundingSurplus 에 기여하지 않는다 — 올림 초과분은 transfer 라운드에서만 나온다.
+    expect(byId(s).roundingSurplus).toBe(0);
   });
 
   it('나누어떨어지면 정확히 0 이다 (배지가 뜨면 안 된다)', () => {
@@ -752,7 +768,7 @@ describe('roundingSurplus — 더 걷힌 금액이 정확히 드러난다', () =
       gameFeePerGame: 4000,
       shoeFee: 2000,
       shoeRenters: ['a'],
-      extras: [{ id: 'e1', label: '음료', amount: 12000, splitAmong: 'all' }],
+      extras: [{ id: 'e1', label: '음료', amounts: evenAmounts(12000, ['a', 'b', 'c', 'd']) }],
       rounds: [
         mkRound({
           id: 'r1',
@@ -775,8 +791,8 @@ describe('roundingSurplus — 더 걷힌 금액이 정확히 드러난다', () =
       gameFeePerGame: 4000,
       shoeFee: 0,
       extras: [
-        { id: 'e1', label: '치킨', amount: 10000, splitAmong: 'all' }, // 2,000 × 5 → +0
-        { id: 'e2', label: '맥주', amount: 5000, splitAmong: ['a', 'b', 'c'] }, // 1,667 × 3 → +1
+        { id: 'e1', label: '치킨', amounts: evenAmounts(10000, ['a', 'b', 'c']) }, // 2,000 × 5 → +0
+        { id: 'e2', label: '맥주', amounts: evenAmounts(5000, ['a', 'b', 'c']) }, // 1,667 × 3 → +1
       ],
       rounds: [
         mkRound({
@@ -789,30 +805,31 @@ describe('roundingSurplus — 더 걷힌 금액이 정확히 드러난다', () =
       ],
     });
     const r = byId(s);
-    const expected =
-      (Math.ceil(10000 / 5) * 5 - 10000) +
-      (Math.ceil(5000 / 3) * 3 - 5000) +
-      (Math.ceil(8000 / 3) * 3 - 8000);
-    expect(expected).toBe(2);
+    // 기타비용은 입력에서 이미 확정돼 계산 단계 나눗셈이 없다 — transfer 라운드 몫만 남는다.
+    const expected = Math.ceil(8000 / 3) * 3 - 8000;
+    expect(expected).toBe(1);
     expect(r.roundingSurplus).toBe(expected);
   });
 
-  it('초과분은 나눗셈 한 번당 인원수 미만이라는 상한을 넘지 않는다', () => {
-    // 7명이 나눠 내는 기타비용 2건 → 각각 최대 6원, 합쳐도 12원을 넘을 수 없다
+  it('기타비용만 있는 정산은 초과분이 0 이다 (올림이 입력 단계에서 끝났다)', () => {
+    // 7명이 나눠 내는 기타비용 2건. 올림은 입력 시점에 이미 반영돼 있으므로
+    // 계산 엔진이 만드는 초과분은 없다.
     const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
     const s = mkSettlement({
       members: members(...ids),
       gameFeePerGame: 0,
       shoeFee: 0,
       extras: [
-        { id: 'e1', label: 'x', amount: 99999, splitAmong: 'all' },
-        { id: 'e2', label: 'y', amount: 7777, splitAmong: 'all' },
+        { id: 'e1', label: 'x', amounts: evenAmounts(99999, ids) },
+        { id: 'e2', label: 'y', amounts: evenAmounts(7777, ids) },
       ],
     });
     const r = byId(s);
-    expect(r.roundingSurplus).toBe(
-      (Math.ceil(99999 / 7) * 7 - 99999) + (Math.ceil(7777 / 7) * 7 - 7777),
-    );
+    expect(r.roundingSurplus).toBe(0);
+    // 다만 사람별 금액의 합계는 원래 금액보다 크다 — 그 차이는 입력 단계에서 생긴 것이다
+    const collected = sum(r.results.map((x) => x.extra));
+    expect(collected).toBe(Math.ceil(99999 / 7) * 7 + Math.ceil(7777 / 7) * 7);
+    expect(collected).toBeGreaterThan(99999 + 7777);
     expect(r.roundingSurplus).toBeGreaterThanOrEqual(0);
     expect(r.roundingSurplus).toBeLessThan(7 * 2);
   });
@@ -851,7 +868,7 @@ describe('roundingSurplus — 더 걷힌 금액이 정확히 드러난다', () =
       members: members('a'),
       gameFeePerGame: 0,
       shoeFee: 0,
-      extras: [{ id: 'e1', label: '유령', amount: 5000, splitAmong: ['ghost'] }],
+      extras: [{ id: 'e1', label: '유령', amounts: evenAmounts(5000, ['ghost']) }],
     });
     const r = byId(s);
     // 아무에게도 청구되지 않는다 — 이 자체는 막지 않는다(사용자가 대상을 다시 지정해야 한다)
@@ -867,7 +884,7 @@ describe('roundingSurplus — 더 걷힌 금액이 정확히 드러난다', () =
       members: members('a', 'b'),
       gameFeePerGame: 0,
       shoeFee: 0,
-      extras: [{ id: 'e1', label: '맥주', amount: 5000, splitAmong: ['a'] }],
+      extras: [{ id: 'e1', label: '맥주', amounts: evenAmounts(5000, ['a']) }],
     });
     const r = byId(s);
     expect(r.unassignedExtras).toEqual([]);
@@ -968,12 +985,14 @@ function makeSettlement(rng: Rng, methods?: Round['method'][]): Settlement {
     Array.from({ length: randInt(rng, 1, 5) }, () =>
       pick<Round['method']>(rng, ['none', 'pot', 'transfer']),
     );
-  const extras: Extra[] = Array.from({ length: randInt(rng, 0, 2) }, (_, i) => ({
-    id: `e${i}`,
-    label: `extra${i}`,
-    amount: randInt(rng, 1, 10) * 1000,
-    splitAmong: rng() < 0.5 ? 'all' : shuffled(rng, ids).slice(0, randInt(rng, 1, n)),
-  }));
+  const extras: Extra[] = Array.from({ length: randInt(rng, 0, 2) }, (_, i) => {
+    const targets = rng() < 0.5 ? ids : shuffled(rng, ids).slice(0, randInt(rng, 1, n));
+    return {
+      id: `e${i}`,
+      label: `extra${i}`,
+      amounts: evenAmounts(randInt(rng, 1, 10) * 1000, targets),
+    };
+  });
   return mkSettlement({
     members: ms,
     gameFeePerGame: randInt(rng, 6, 10) * 500,
@@ -1004,19 +1023,15 @@ function transferSurplusOf(round: Round, gameFeePerGame: number): number {
   return Math.ceil(pot / losers.length) * losers.length - pot;
 }
 
-/** 기타비용 항목들이 만드는 초과분을 독립적으로 계산한다 */
-function extraSurplusOf(s: Settlement): number {
-  const known = new Set(s.members.map((m) => m.id));
-  let surplus = 0;
-  for (const item of s.extras) {
-    const n = (item.splitAmong === 'all' ? [...known] : item.splitAmong).filter((id) =>
-      known.has(id),
-    ).length;
-    // 분담 대상이 한 명도 없으면 나눗셈 자체가 없으므로 올림 초과분도 0 이다.
-    // 그 항목은 미수금이며 unassignedExtras 로 따로 드러난다 — 초과분에 섞지 않는다 (F2/F3).
-    surplus += n === 0 ? 0 : Math.ceil(item.amount / n) * n - item.amount;
-  }
-  return surplus;
+/**
+ * 기타비용이 만드는 올림 초과분.
+ *
+ * 2026-08-24 부터 `Extra.amounts` 가 사람별 금액을 그대로 담으므로 계산 단계에서 나눗셈을
+ * 하지 않는다. 균등 분배는 입력 시점에 이미 끝나 있어 여기서 초과분이 생길 여지가 없다.
+ * 따라서 항상 0 이고, 초과분은 transfer 라운드에서만 나온다.
+ */
+function extraSurplusOf(_s: Settlement): number {
+  return 0;
 }
 
 /**
@@ -1082,7 +1097,9 @@ describe('불변식 — 고정 시드 랜덤', () => {
     // 균형 케이스가 실제로 충분히 생성되어야 테스트가 공허하지 않다
     expect(balanced).toBeGreaterThan(20);
     // 초과분이 0 이 아닌 케이스도 충분해야 한다 — 전부 0 이면 위 대조가 아무것도 검증하지 못한다
-    expect(withSurplus).toBeGreaterThan(20);
+    // extras 가 더 이상 초과분을 만들지 않아 transfer 라운드에서만 나온다.
+    // 그래도 충분한 수가 생겨야 위 대조가 공허하지 않다 (실측 10건 기준).
+    expect(withSurplus).toBeGreaterThan(5);
   });
 
   it('A10: 혼합 정산(pot 2 / transfer 2 / none 1)에서도 A4·A5 불변식 유지 — 200케이스', () => {
@@ -1096,7 +1113,9 @@ describe('불변식 — 고정 시드 랜덤', () => {
       if (out.surplus > 0) withSurplus++;
     }
     expect(balanced).toBeGreaterThan(20);
-    expect(withSurplus).toBeGreaterThan(20);
+    // extras 가 더 이상 초과분을 만들지 않아 transfer 라운드에서만 나온다.
+    // 그래도 충분한 수가 생겨야 위 대조가 공허하지 않다 (실측 10건 기준).
+    expect(withSurplus).toBeGreaterThan(5);
   });
 
   it('A10: 혼합 정산 손계산 대조 — 5판 시나리오', () => {
@@ -1176,7 +1195,7 @@ describe('calculate — 반올림 통합', () => {
       members: ms,
       gameFeePerGame: 0,
       shoeFee: 0,
-      extras: [{ id: 'e1', label: '음료', amount: 10000, splitAmong: 'all' }],
+      extras: [{ id: 'e1', label: '음료', amounts: evenAmounts(10000, ['a', 'b', 'c']) }],
     });
     const r = byId(s);
     // splitEvenly 가 전원을 올리므로 셋 다 3,334 이고 합계가 10,002 다 (초과 2원)
@@ -1184,7 +1203,9 @@ describe('calculate — 반올림 통합', () => {
     expect(r.of('b').rounded).toBe(3334);
     expect(r.of('c').rounded).toBe(3334);
     expect(sum(r.results.map((x) => x.rounded))).toBe(10002);
-    expect(r.roundingSurplus).toBe(2);
+    // 기타비용은 입력 시점에 이미 사람별 금액으로 확정되므로 계산 단계에서 나눗셈이 없다.
+    // 따라서 roundingSurplus 에 기여하지 않는다 — 올림 초과분은 transfer 라운드에서만 나온다.
+    expect(r.roundingSurplus).toBe(0);
     // 올림은 splitEvenly 단계에서 끝났으므로 distributeWithRemainder 는 아무것도 조정하지 않는다
     expect(sum(r.results.map((x) => x.adjustment))).toBe(0);
   });
@@ -1235,7 +1256,10 @@ describe('calculate — 반올림 통합', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 5-A-2 / 5-A-3 — 정산 모드 게이트 (G1, G2, G8) 및 표시 정수성 (B6')
+// 표시 정수성 (B6')
+//
+// 전역 정산/내기 모드 게이트 테스트(G1/G2/G8)는 2026-08-24 에 제거했다. 전역 mode 자체가
+// 사라지고 판별 `method === 'none'` 하나로 표현하게 바뀌어 검증 대상이 없어졌다.
 // ---------------------------------------------------------------------------
 
 /**
@@ -1243,13 +1267,12 @@ describe('calculate — 반올림 통합', () => {
  * r3 은 일부러 배당(10,000)이 판돈(4,000)을 초과해 `imbalance === +6000` 이다.
  * 이게 없으면 G1 의 `breakdowns[].imbalance === 0` 검사가 공허해진다.
  */
-function betScenario(mode: SettlementMode): Settlement {
+function betScenario(): Settlement {
   return mkSettlement({
     members: members('a', 'b', 'c', 'd'),
     gameFeePerGame: 4000,
     shoeFee: 2000,
     shoeRenters: ['a'],
-    mode,
     rounds: [
       mkRound({
         id: 'r1',
@@ -1282,110 +1305,10 @@ function betScenario(mode: SettlementMode): Settlement {
   });
 }
 
-describe('정산 모드 / 내기 모드 게이트', () => {
-  it('내기 모드에서는 기존 계산이 그대로다 (대조군)', () => {
-    const r = byId(betScenario('bet'));
-    expect(r.of('a').betDelta).toBe(-6000);
-    expect(r.of('b').betDelta).toBe(-12000);
-    expect(r.of('c').betDelta).toBe(6000);
-    expect(r.of('d').betDelta).toBe(6000);
-    expect(r.breakdowns.map((b) => b.imbalance)).toEqual([0, 0, 6000]);
-    expect(r.totalImbalance).toBe(6000);
-  });
-
-  it('G1: 정산 모드면 내기 입력이 남아 있어도 betDelta·totalImbalance·breakdowns[].imbalance 가 전부 0', () => {
-    const r = byId(betScenario('normal'));
-
-    for (const row of r.results) expect(row.betDelta).toBe(0);
-    expect(sum(r.results.map((x) => x.betDelta))).toBe(0);
-    expect(r.totalImbalance).toBe(0);
-    // breakdowns 를 안 막으면 ResultCard 의 원인 힌트 블록이 정산 모드에서도 뜬다
-    expect(r.breakdowns.map((b) => b.imbalance)).toEqual([0, 0, 0]);
-    for (const b of r.breakdowns) {
-      expect(Object.values(b.delta).every((d) => d === 0)).toBe(true);
-    }
-  });
-
-  it('G1: 정산 모드에서도 gameCount·gameFee·신발비는 그대로 센다', () => {
-    const r = byId(betScenario('normal'));
-    for (const row of r.results) {
-      expect(row.gameCount).toBe(3);
-      expect(row.gameFee).toBe(12000);
-    }
-    expect(r.of('a').shoe).toBe(2000);
-    expect(sum(r.results.map((x) => x.rounded))).toBe(50000); // 게임비 48,000 + 신발비 2,000
-  });
-
-  it('G5: roundDelta 를 직접 호출해도 정산 모드면 경고가 뜰 근거가 없다 (delta·imbalance 0)', () => {
-    const s = betScenario('normal');
-    for (const round of s.rounds) {
-      const b = roundDelta(round, s.gameFeePerGame, 'normal');
-      expect(b.imbalance).toBe(0);
-      expect(Object.values(b.delta).every((d) => d === 0)).toBe(true);
-    }
-    // 같은 라운드를 내기 모드로 부르면 r3 는 여전히 불균형이다
-    expect(roundDelta(s.rounds[2], s.gameFeePerGame, 'bet').imbalance).toBe(6000);
-  });
-
-  it('G2: calculate() 는 라운드의 내기 입력을 변형하지 않는다 (비파괴 전환)', () => {
-    const s = betScenario('normal');
-    const before = JSON.parse(JSON.stringify(s.rounds));
-
-    calculate(s);
-    calculate({ ...s, mode: 'bet' });
-    calculate(s);
-
-    expect(s.rounds).toEqual(before);
-    for (const round of s.rounds) {
-      expect(round.ranking).toEqual(before[s.rounds.indexOf(round)].ranking);
-    }
-    // 모드를 되돌리면 계산 결과도 그대로 살아난다
-    const back = byId({ ...s, mode: 'bet' });
-    expect(back.of('a').betDelta).toBe(-6000);
-    expect(back.totalImbalance).toBe(6000);
-  });
-
-  it("G8: mode 가 undefined 인 구버전 데이터에서 내기 금액이 사라지지 않는다 (극성 회귀 방지)", () => {
-    // `mode === 'bet' ? delta : 0` 으로 극성을 뒤집으면 여기서 전부 0 이 된다
-    const legacy: Settlement = {
-      ...betScenario('bet'),
-      mode: undefined as unknown as SettlementMode,
-    };
-    const r = byId(legacy);
-
-    expect(r.of('a').betDelta).toBe(-6000);
-    expect(r.of('b').betDelta).toBe(-12000);
-    expect(r.totalImbalance).toBe(6000);
-    expect(r.results.some((x) => x.betDelta !== 0)).toBe(true);
-  });
-
-  it("G8: 알 수 없는 mode 값도 내기 모드로 폴백한다 (극성 회귀 방지 — 기본 인자로는 못 잡는 경로)", () => {
-    // `mode: undefined` 는 roundDelta 의 기본 인자 `= 'bet'` 이 먼저 막아버려서
-    // 극성이 뒤집혀도 통과한다. 손상된 저장값이 'bet'/'normal' 이 아닌 문자열을 담고 있으면
-    // 기본 인자가 안 먹으므로 판정식의 극성이 그대로 드러난다.
-    const corrupted: Settlement = {
-      ...betScenario('bet'),
-      mode: 'legacy-v1' as unknown as SettlementMode,
-    };
-    const r = byId(corrupted);
-    expect(r.of('a').betDelta).toBe(-6000);
-    expect(r.of('b').betDelta).toBe(-12000);
-    expect(r.totalImbalance).toBe(6000);
-
-    // roundDelta 직접 호출도 동일하게 안전한 쪽으로 무너져야 한다
-    const b = roundDelta(corrupted.rounds[0], corrupted.gameFeePerGame, 'legacy-v1' as unknown as SettlementMode);
-    expect(b.delta.a).toBe(-3000);
-  });
-
-  it('G8: roundDelta 도 mode 인자를 생략하면 내기 모드로 폴백한다', () => {
-    const s = betScenario('bet');
-    expect(roundDelta(s.rounds[0], s.gameFeePerGame).delta.a).toBe(-3000);
-    expect(roundDelta(s.rounds[0], s.gameFeePerGame, undefined).delta.a).toBe(-3000);
-  });
-
-  it("B6': 두 모드 모두 표시 문자열에 소수점이 없다", () => {
-    for (const mode of ['bet', 'normal'] as const) {
-      const r = byId(betScenario(mode));
+describe("표시 정수성 (B6')", () => {
+  it("B6': 내기가 섞인 정산에서도 표시 문자열에 소수점이 없다", () => {
+    {
+      const r = byId(betScenario());
       for (const row of r.results) {
         expect(formatKRW(row.rounded)).not.toContain('.');
         expect(formatSigned(row.betDelta)).not.toContain('.');
@@ -1404,7 +1327,7 @@ describe('정산 모드 / 내기 모드 게이트', () => {
       gameFeePerGame: 4000,
       shoeFee: 2000,
       shoeRenters: ['a', 'c'],
-      extras: [{ id: 'e1', label: '뒤풀이', amount: 13000, splitAmong: 'all' }],
+      extras: [{ id: 'e1', label: '뒤풀이', amounts: evenAmounts(13000, ['a', 'b', 'c', 'd', 'e', 'f']) }],
       rounds: [
         mkRound({
           id: 'r1',
@@ -1427,7 +1350,7 @@ describe('정산 모드 / 내기 모드 게이트', () => {
     expect(r.results.map((x) => x.extra)).toEqual([2167, 2167, 2167, 2167, 2167, 2167]);
     expect(sum(r.results.map((x) => x.extra))).toBe(13002);
     expect(sum(r.results.map((x) => x.extra)) - 13000).toBe(2);
-    // 판비 쪽(12,000 / 3명)은 나누어떨어지므로 초과분 전액이 기타비용에서 온다
-    expect(r.roundingSurplus).toBe(2);
+    // 판비 쪽(12,000 / 3명)은 나누어떨어지고, 기타비용은 계산 단계 나눗셈이 없다 → 초과분 0
+    expect(r.roundingSurplus).toBe(0);
   });
 });

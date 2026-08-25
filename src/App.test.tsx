@@ -205,20 +205,12 @@ describe('App 스모크', () => {
     });
   });
 
-  /**
-   * 모드 전환은 **비파괴적**이어야 한다. 정산 모드로 바꿔도 입력해둔 순위·배당은
-   * 남아 있고 계산에서만 빠진다. 잘못 눌렀을 때 되돌릴 수 없으면 안 되기 때문이다.
-   */
-  it('G2: 모드를 왕복해도 입력해둔 내기 데이터가 지워지지 않는다', async () => {
-    const user = userEvent.setup();
-    render(<App />);
-
-    await addMembers(user, ['가', '나']);
+  /** 판 하나에 pot 내기 입력을 채워 넣고 그 라운드 id 를 돌려준다 */
+  function seedLoadedPotRound(): string {
     act(() => {
       useSettlementStore.getState().setFees({ gameFeePerGame: 4000 });
       useSettlementStore.getState().addRound();
     });
-
     const roundId = useSettlementStore.getState().settlement.rounds[0]!.id;
     const memberId = useSettlementStore.getState().settlement.members[0]!.id;
     act(() => {
@@ -227,11 +219,26 @@ describe('App 스모크', () => {
       useSettlementStore.getState().tapRank(roundId, memberId);
       useSettlementStore.getState().setPayout(roundId, [2000]);
     });
+    return roundId;
+  }
+
+  /**
+   * 정산/내기 전환은 **비파괴적**이어야 한다. 정산으로 바꿔도 입력해둔 순위·배당은
+   * 남아 있고 계산에서만 빠진다. 잘못 눌렀을 때 되돌릴 수 없으면 안 되기 때문이다.
+   *
+   * 전역 토글이 사라지면서(2026-08-24) 이 전환은 판별 세그먼트로 옮겨졌다.
+   */
+  it('G2: 판의 정산/내기를 왕복해도 입력해둔 내기 데이터가 지워지지 않는다', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await addMembers(user, ['가', '나']);
+    seedLoadedPotRound();
 
     const before = useSettlementStore.getState().settlement.rounds[0]!;
 
-    await user.click(screen.getByRole('radio', { name: '정산' }));
-    await user.click(screen.getByRole('radio', { name: '내기' }));
+    await user.click(screen.getByRole('button', { name: '정산' }));
+    await user.click(screen.getByRole('button', { name: '내기' }));
 
     const after = useSettlementStore.getState().settlement.rounds[0]!;
     expect(after.ranking).toEqual(before.ranking);
@@ -240,7 +247,52 @@ describe('App 스모크', () => {
     expect(after.method).toBe(before.method);
   });
 
-  it('G1: 정산 모드에서는 내기 금액이 결과에 반영되지 않는다', async () => {
+  it('G1: 정산으로 고른 판은 내기 금액이 결과에 반영되지 않는다', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await addMembers(user, ['가', '나']);
+    seedLoadedPotRound();
+
+    // 내기는 제로섬이라 **총액은 어느 쪽이든 8,000원으로 같다**. 달라지는 건 개인 부담이다.
+    // 총액으로 판정하면 어느 쪽에서도 통과해 아무것도 검증하지 못한다.
+    const card = screen.getByTestId('result-card');
+    const rows = () =>
+      within(card)
+        .getAllByTestId('result-row')
+        .map((row) => row.textContent ?? '');
+
+    // 내기 판: 1등이 배당 2,000을 받고 판돈 1,000을 냈으므로 3,000 / 5,000 으로 갈린다
+    expect(rows().some((t) => t.includes('3,000원'))).toBe(true);
+    expect(rows().some((t) => t.includes('5,000원'))).toBe(true);
+
+    // 정산 판: 내기가 빠져 둘 다 게임비 4,000원씩만 부담한다
+    await user.click(screen.getByRole('button', { name: '정산' }));
+    expect(rows().every((t) => t.includes('4,000원'))).toBe(true);
+    expect(rows().some((t) => t.includes('3,000원'))).toBe(false);
+
+    // 되돌리면 다시 갈린다 — 숨긴 게 아니라 계산이 실제로 따라온다
+    await user.click(screen.getByRole('button', { name: '내기' }));
+    expect(rows().some((t) => t.includes('3,000원'))).toBe(true);
+  });
+
+  /**
+   * 전역 모드 토글은 2026-08-24 에 제거됐다. 헤더에는 제목과 "새 정산" 만 남는다.
+   * 회귀로 다시 들어오는 걸 막기 위해 부재를 고정한다.
+   */
+  it('헤더에 전역 정산/내기 토글이 없다', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await addMembers(user, ['가']);
+
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: '정산' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: '내기' })).not.toBeInTheDocument();
+  });
+
+  /** 판마다 다르게 고를 수 있어야 한다 — 그게 전역 토글을 없앤 이유다 */
+  it('한 정산 안에서 정산 판과 내기 판을 섞을 수 있다', async () => {
     const user = userEvent.setup();
     render(<App />);
 
@@ -248,34 +300,19 @@ describe('App 스모크', () => {
     act(() => {
       useSettlementStore.getState().setFees({ gameFeePerGame: 4000 });
       useSettlementStore.getState().addRound();
+      useSettlementStore.getState().addRound();
     });
 
-    const roundId = useSettlementStore.getState().settlement.rounds[0]!.id;
-    const memberId = useSettlementStore.getState().settlement.members[0]!.id;
-    act(() => {
-      useSettlementStore.getState().setMethod(roundId, 'pot');
-      useSettlementStore.getState().setAnte(roundId, 1000);
-      useSettlementStore.getState().tapRank(roundId, memberId);
-      useSettlementStore.getState().setPayout(roundId, [2000]);
-    });
+    const [first, second] = screen.getAllByRole('article');
+    await user.click(within(first).getByRole('button', { name: '내기' }));
+    await user.click(within(second).getByRole('button', { name: '정산' }));
 
-    // 내기는 제로섬이라 **총액은 두 모드에서 8,000원으로 같다**. 달라지는 건 개인 부담이다.
-    // 총액으로 판정하면 어느 모드에서도 통과해 아무것도 검증하지 못한다.
-    const card = screen.getByTestId('result-card');
-    const rows = () =>
-      within(card)
-        .getAllByTestId('result-row')
-        .map((row) => row.textContent ?? '');
+    const rounds = useSettlementStore.getState().settlement.rounds;
+    expect(rounds[0]!.method).toBe('pot');
+    expect(rounds[1]!.method).toBe('none');
 
-    // 내기 모드: 1등이 배당 2,000을 받고 판돈 1,000을 냈으므로 3,000 / 5,000 으로 갈린다
-    await user.click(screen.getByRole('radio', { name: '내기' }));
-    expect(rows().some((t) => t.includes('3,000원'))).toBe(true);
-    expect(rows().some((t) => t.includes('5,000원'))).toBe(true);
-
-    // 정산 모드: 내기가 빠져 둘 다 게임비 4,000원씩만 부담한다
-    await user.click(screen.getByRole('radio', { name: '정산' }));
-    expect(rows().every((t) => t.includes('4,000원'))).toBe(true);
-    expect(rows().some((t) => t.includes('3,000원'))).toBe(false);
+    // 내기 판이 하나라도 있으므로 결과 카드에는 내기 표시가 남는다
+    expect(within(screen.getByTestId('result-card')).getByText('내기±')).toBeInTheDocument();
   });
 
   /**
@@ -296,7 +333,6 @@ describe('App 스모크', () => {
     const roundId = useSettlementStore.getState().settlement.rounds[0]!.id;
     const ids = useSettlementStore.getState().settlement.members.map((m) => m.id);
     act(() => {
-      useSettlementStore.getState().setMode('bet');
       useSettlementStore.getState().setMethod(roundId, 'transfer');
       // 이긴 쪽 2명분 8,000원을 진 쪽 3명이 나눈다 → 2,667원씩, 1원 더 걷힘
       for (const id of ids.slice(2)) useSettlementStore.getState().toggleLoser(roundId, id);
@@ -306,7 +342,15 @@ describe('App 스모크', () => {
     expect(note.textContent).toContain('1원');
   });
 
-  it('F3: 분담 대상이 사라진 기타비용은 결과 카드에 경고로 뜬다', async () => {
+  /**
+   * F3 배선. 낼 사람이 아무도 없는 기타비용은 총액에서 조용히 빠지므로 화면에 드러나야 한다.
+   *
+   * 예전에는 "유일한 분담 대상을 removeMember 로 지운다" 로 이 상태를 만들었는데,
+   * `Extra.amounts`(사람별 금액) 전환 이후 removeMember 가 그 사람의 금액 자체를 지워서
+   * 항목이 통째로 빈다 — 그 경로로는 더 이상 미청구 금액이 남지 않는다.
+   * 그래서 여기서는 calc 가 실제로 걸러내는 상태(모르는 id 앞으로 남은 금액)를 직접 만든다.
+   */
+  it('F3: 아무에게도 청구되지 않는 기타비용은 결과 카드에 경고로 뜬다', async () => {
     const user = userEvent.setup();
     render(<App />);
 
@@ -314,18 +358,20 @@ describe('App 스모크', () => {
     const ids = useSettlementStore.getState().settlement.members.map((m) => m.id);
     act(() => {
       useSettlementStore.getState().setFees({ gameFeePerGame: 4000 });
-      useSettlementStore.getState().addExtra({ label: '맥주', amount: 5000, splitAmong: [ids[1]!] });
+      useSettlementStore.getState().addExtra({ label: '사이다', amounts: { [ids[0]!]: 3000 } });
     });
     expect(screen.queryByTestId('unassigned-extras-warning')).not.toBeInTheDocument();
 
-    // 유일한 분담 대상을 지우면 그 5,000원은 아무에게도 청구되지 않는다
+    // 멤버 id 가 아닌 키 앞으로 남은 금액은 아무에게도 청구되지 않는다
     act(() => {
-      useSettlementStore.getState().removeMember(ids[1]!);
+      useSettlementStore.getState().addExtra({ label: '맥주', amounts: { 'gone-member': 5000 } });
     });
 
     const warn = screen.getByTestId('unassigned-extras-warning');
     expect(warn.textContent).toContain('맥주');
     expect(warn.textContent).toContain('5,000');
+    // 정상 청구된 항목까지 싸잡아 경고하면 안 된다
+    expect(warn.textContent).not.toContain('사이다');
   });
 
   it('새 정산을 눌러 세션을 비워도 요금 프리셋은 남는다', async () => {

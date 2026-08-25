@@ -267,7 +267,10 @@ describe('useSettlementStore: 액션 로직', () => {
 
     useSettlementStore.getState().toggleShoeRenter(a.id);
     useSettlementStore.getState().toggleShoeRenter(b.id);
-    useSettlementStore.getState().addExtra({ label: '음료', amount: 3000, splitAmong: [a.id, b.id, c.id] });
+    // 사람마다 다른 금액을 넣어야 "A 키만 사라졌는지"를 값으로도 확인할 수 있다
+    useSettlementStore
+      .getState()
+      .addExtra({ label: '음료', amounts: { [a.id]: 2000, [b.id]: 2500, [c.id]: 1500 } });
 
     useSettlementStore.getState().removeMember(a.id);
 
@@ -286,7 +289,9 @@ describe('useSettlementStore: 액션 로직', () => {
     expect(round2.participants).not.toContain(a.id);
 
     expect(s.shoeRenters).toEqual([b.id]);
-    expect(s.extras[0].splitAmong).toEqual([b.id, c.id]);
+    // 삭제된 멤버의 몫은 키째 사라지고, 남은 사람의 금액은 그대로여야 한다
+    expect(s.extras[0].amounts).toEqual({ [b.id]: 2500, [c.id]: 1500 });
+    expect(a.id in s.extras[0].amounts).toBe(false);
   });
 
   it('resetSession: 세션(멤버/판)은 초기화되지만 prefs와 최근 멤버 이름은 유지된다 (C5)', () => {
@@ -315,68 +320,77 @@ describe('useSettlementStore: 액션 로직', () => {
     expect(usePrefsStore.getState().shoeFee).toBe(1500);
   });
 
-  it('setMode: 세션의 mode와 prefs를 동시에 갱신하고, resetSession 후 새 세션도 그 모드를 이어받는다', () => {
-    expect(useSettlementStore.getState().settlement.mode).toBe('bet');
-    useSettlementStore.getState().setMode('normal');
-    expect(useSettlementStore.getState().settlement.mode).toBe('normal');
-    expect(usePrefsStore.getState().mode).toBe('normal');
-
-    useSettlementStore.getState().resetSession();
-    expect(useSettlementStore.getState().settlement.mode).toBe('normal');
-  });
-
-  it('addRound (G2): mode가 normal이면 직전 판이 있어도 method/ante/payout을 상속하지 않는다', () => {
+  it('addRound: method가 none이어도 직전 판을 그대로 상속한다 (전역 모드 게이트 제거)', () => {
+    // 이전에는 mode === 'normal' 이면 method/ante/payout 상속을 막는 분기가 있었다.
+    // 전역 모드가 사라졌으므로(2026-08-24) 상속은 method 값과 무관하게 항상 일어난다.
     const members = addMembers(['A', 'B']);
     useSettlementStore.getState().addRound();
     const round1Id = useSettlementStore.getState().settlement.rounds[0].id;
-    useSettlementStore.getState().setMethod(round1Id, 'pot');
-    useSettlementStore.getState().setAnte(round1Id, 1000);
-    useSettlementStore.getState().setPayout(round1Id, [2000]);
+    useSettlementStore.getState().setMethod(round1Id, 'none');
+    useSettlementStore.getState().setAnte(round1Id, 1500);
+    useSettlementStore.getState().setPayout(round1Id, [4500]);
 
-    useSettlementStore.getState().setMode('normal');
     useSettlementStore.getState().addRound();
     const round2 = useSettlementStore.getState().settlement.rounds[1];
     expect(round2.method).toBe('none');
-    expect(round2.ante).toBe(0);
-    expect(round2.payout).toEqual([]);
-    // participants/teams는 모드와 무관하게 계속 상속된다
+    // 기본값(0 / [])과 다른 값을 넣었으므로 이 두 줄이 상속 여부를 실제로 판별한다
+    expect(round2.ante).toBe(1500);
+    expect(round2.payout).toEqual([4500]);
     expect(round2.participants.sort()).toEqual(members.map((m) => m.id).sort());
-
-    // bet으로 돌아가도 정산 모드에서 만든 판에 유령 판돈이 생기면 안 된다
-    useSettlementStore.getState().setMode('bet');
-    const round2AfterSwitch = useSettlementStore.getState().settlement.rounds[1];
-    expect(round2AfterSwitch.method).toBe('none');
-    expect(round2AfterSwitch.ante).toBe(0);
-    expect(round2AfterSwitch.payout).toEqual([]);
-    // 기존 판(round1)의 내기 입력은 모드 전환에 전혀 영향받지 않는다 (비파괴적 전환)
-    const round1AfterSwitch = useSettlementStore.getState().settlement.rounds[0];
-    expect(round1AfterSwitch.method).toBe('pot');
-    expect(round1AfterSwitch.ante).toBe(1000);
-    expect(round1AfterSwitch.payout).toEqual([2000]);
   });
 
-  it('setMode 왕복: 라운드의 ranking/payout/losers/teams가 전환 전과 동일하다 (G2)', () => {
-    const [a, b, c, d] = addMembers(['A', 'B', 'C', 'D']);
-    useSettlementStore.getState().addRound();
-    const roundId = useSettlementStore.getState().settlement.rounds[0].id;
-    useSettlementStore.getState().setTeams(roundId, [
-      [a.id, b.id],
-      [c.id, d.id],
-    ]);
-    useSettlementStore.getState().setMethod(roundId, 'pot');
-    useSettlementStore.getState().setAnte(roundId, 1000);
-    useSettlementStore.getState().setPayout(roundId, [3000, 1000]);
-    useSettlementStore.getState().tapRank(roundId, 0);
-    const before = useSettlementStore.getState().settlement.rounds[0];
+  it('addExtra: 사람별 금액을 정수로 정규화해 저장한다', () => {
+    const [a, b] = addMembers(['A', 'B']);
+    useSettlementStore
+      .getState()
+      .addExtra({ label: '음료', amounts: { [a.id]: 2000.4, [b.id]: 2500 } });
 
-    useSettlementStore.getState().setMode('normal');
-    useSettlementStore.getState().setMode('bet');
-    const after = useSettlementStore.getState().settlement.rounds[0];
+    const extra = useSettlementStore.getState().settlement.extras[0];
+    expect(extra.id).toBeTruthy();
+    expect(extra.amounts).toEqual({ [a.id]: 2000, [b.id]: 2500 });
+  });
 
-    expect(after.ranking).toEqual(before.ranking);
-    expect(after.payout).toEqual(before.payout);
-    expect(after.losers).toEqual(before.losers);
-    expect(after.teams).toEqual(before.teams);
+  it('setExtraAmounts: 소수는 정수로, 0 이하·NaN·Infinity는 키째 사라진다', () => {
+    const [a, b, c] = addMembers(['A', 'B', 'C']);
+    useSettlementStore.getState().addExtra({ label: '음료', amounts: { [a.id]: 3000 } });
+    const extraId = useSettlementStore.getState().settlement.extras[0].id;
+
+    useSettlementStore.getState().setExtraAmounts(extraId, {
+      [a.id]: 2000.6, // 반올림 -> 2001
+      [b.id]: 0, // 0원인 사람은 저장하지 않는다
+      [c.id]: -500, // 음수도 마찬가지
+      ghost1: Number.NaN,
+      ghost2: Number.POSITIVE_INFINITY,
+    });
+
+    const extra = useSettlementStore.getState().settlement.extras[0];
+    expect(extra.amounts).toEqual({ [a.id]: 2001 });
+    expect(extra.label).toBe('음료'); // label은 건드리지 않는다
+  });
+
+  it('setExtraAmounts: 맵을 통째로 교체하므로 이전 키는 남지 않는다', () => {
+    const [a, b] = addMembers(['A', 'B']);
+    useSettlementStore
+      .getState()
+      .addExtra({ label: '음료', amounts: { [a.id]: 2000, [b.id]: 2000 } });
+    const extraId = useSettlementStore.getState().settlement.extras[0].id;
+
+    useSettlementStore.getState().setExtraAmounts(extraId, { [b.id]: 3000 });
+    expect(useSettlementStore.getState().settlement.extras[0].amounts).toEqual({ [b.id]: 3000 });
+  });
+
+  it('setExtraAmounts: 다른 항목은 건드리지 않는다', () => {
+    const [a] = addMembers(['A']);
+    useSettlementStore.getState().addExtra({ label: '음료', amounts: { [a.id]: 2000 } });
+    useSettlementStore.getState().addExtra({ label: '간식', amounts: { [a.id]: 5000 } });
+    const [first, second] = useSettlementStore.getState().settlement.extras;
+
+    useSettlementStore.getState().setExtraAmounts(first.id, { [a.id]: 1000 });
+
+    const extras = useSettlementStore.getState().settlement.extras;
+    expect(extras[0].amounts).toEqual({ [a.id]: 1000 });
+    expect(extras[1].amounts).toEqual({ [a.id]: 5000 });
+    expect(extras[1].id).toBe(second.id);
   });
 });
 
@@ -448,7 +462,112 @@ describe('영속성 (C1~C4): localStorage 라운드트립', () => {
     expect(backupKey).toBeDefined();
   });
 
-  it('G7: v1 스키마 저장값(mode 없음, roundingUnit 있음)이 members/rounds/extras 보존하며 v2로 마이그레이션된다', async () => {
+  it('v3: v2 저장값의 mode가 사라지고 extras가 amounts로 균등 분배되며 나머지는 전부 보존된다', async () => {
+    const v2Settlement = {
+      version: 2,
+      id: 'sett-2',
+      date: '2026-08-24T00:00:00.000Z',
+      mode: 'normal', // v3에서 삭제되어야 한다
+      members: [
+        { id: 'm1', name: '철수' },
+        { id: 'm2', name: '영희' },
+        { id: 'm3', name: '민수' },
+      ],
+      // 기본값(0)과 다른 값이어야 보존 검증이 공허해지지 않는다
+      gameFeePerGame: 4000,
+      shoeFee: 2000,
+      shoeRenters: ['m1', 'm3'],
+      rounds: [
+        {
+          id: 'r1',
+          participants: ['m1', 'm2', 'm3'],
+          teams: [['m1', 'm2'], ['m3']],
+          method: 'pot',
+          ante: 1000,
+          payout: [2000],
+          ranking: [['m1', 'm2']],
+          losers: [],
+          transferSource: 'custom',
+          transferAmount: 5000,
+        },
+        {
+          id: 'r2',
+          participants: ['m1', 'm2'],
+          teams: null,
+          method: 'transfer',
+          ante: 0,
+          payout: [],
+          ranking: [],
+          losers: ['m2'],
+          transferSource: 'gameFee',
+          transferAmount: 0,
+        },
+      ],
+      extras: [
+        // 'all' -> 전 멤버 3명에게 균등. 10,000 / 3 은 나누어떨어지지 않으므로
+        // splitEvenly 규칙(전원 동일 금액, 1원 올림)이 실제로 적용됐는지 숫자로 드러난다
+        { id: 'e1', label: '음료', amount: 10000, splitAmong: 'all' },
+        // 지정 배열 -> 그중 실제 멤버만. 6,000 / 2 = 3,000
+        { id: 'e2', label: '간식', amount: 6000, splitAmong: ['m1', 'm2'] },
+        // 이미 삭제된 멤버만 지정된 항목 -> 분담 대상 0명 -> 빈 맵
+        { id: 'e3', label: '유령', amount: 7000, splitAmong: ['gone'] },
+      ],
+    };
+    window.localStorage.setItem(
+      'allcover:session:v1',
+      JSON.stringify({ state: { settlement: v2Settlement }, version: 2 })
+    );
+
+    const { useSettlementStore: reloaded } = await import('./useSettlementStore');
+    const s = reloaded.getState().settlement;
+
+    // 보존: members/rounds가 비면 마이그레이션이 아니라 초기화가 일어난 것이다
+    expect(s.members).toEqual(v2Settlement.members);
+    expect(s.rounds).toHaveLength(2);
+    expect(s.rounds).toEqual(v2Settlement.rounds);
+    expect(s.gameFeePerGame).toBe(4000);
+    expect(s.shoeFee).toBe(2000);
+    expect(s.shoeRenters).toEqual(['m1', 'm3']);
+    expect(s.id).toBe('sett-2');
+    expect(s.date).toBe('2026-08-24T00:00:00.000Z');
+
+    expect(s.version).toBe(3);
+    expect('mode' in s).toBe(false);
+
+    // extras 전환: amount/splitAmong은 사라지고 amounts만 남는다
+    expect(s.extras).toHaveLength(3);
+    for (const e of s.extras) {
+      expect('amount' in e).toBe(false);
+      expect('splitAmong' in e).toBe(false);
+    }
+    expect(s.extras[0]).toEqual({
+      id: 'e1',
+      label: '음료',
+      // 10,000원을 3명이 나누면 전원 3,334원 (합계 10,002원, splitEvenly의 의도된 초과분)
+      amounts: { m1: 3334, m2: 3334, m3: 3334 },
+    });
+    expect(s.extras[1].amounts).toEqual({ m1: 3000, m2: 3000 });
+    expect(s.extras[2].amounts).toEqual({});
+
+    // 전환된 값이 실제 계산에 그대로 먹히는지 교차 검증 (calc.ts)
+    const { calculate: calc } = await import('../lib/calc');
+    const { results, unassignedExtras } = calc(s);
+    const extraOf = (id: string) => results.find((r) => r.memberId === id)!.extra;
+    expect(extraOf('m1')).toBe(3334 + 3000);
+    expect(extraOf('m2')).toBe(3334 + 3000);
+    expect(extraOf('m3')).toBe(3334);
+    // 알려진 한계: 분담 대상이 한 명도 없던 v2 항목은 금액을 얹을 키가 없어 amounts가 비고,
+    // calc의 미수금 경고(합계 0이면 보고하지 않음)에도 잡히지 않는다. v3 스키마에는
+    // "주인 없는 금액"을 담을 자리가 없다. 아래 단언은 그 사실을 못박아 둔 것이지
+    // 바람직한 동작을 승인한 것이 아니다.
+    expect(unassignedExtras).toEqual([]);
+
+    // 이건 정상 마이그레이션이지 손상이 아니므로 손상 백업이 생기면 안 된다
+    const backupKey = Object.keys(window.localStorage).find((k) => k.startsWith('allcover:corrupt:'));
+    expect(backupKey).toBeUndefined();
+  });
+
+  it('v3: v1 저장값도 v1 -> v2 -> v3로 연쇄되어 members/rounds와 extras 전환까지 끝난다', async () => {
     const v1Settlement = {
       version: 1,
       id: 'sett-1',
@@ -460,7 +579,7 @@ describe('영속성 (C1~C4): localStorage 라운드트립', () => {
       gameFeePerGame: 4000,
       shoeFee: 2000,
       shoeRenters: ['m1'],
-      defaultAnte: 1000, // v1 전용 필드(2026-08-21 삭제). v2에서는 삭제되어야 한다
+      defaultAnte: 1000, // v1 전용 필드(2026-08-21 삭제)
       rounds: [
         {
           id: 'r1',
@@ -476,8 +595,8 @@ describe('영속성 (C1~C4): localStorage 라운드트립', () => {
         },
       ],
       extras: [{ id: 'e1', label: '음료', amount: 3000, splitAmong: 'all' }],
-      treasurerId: 'm1', // v1 전용 필드(2026-08-21 삭제). v2에서는 삭제되어야 한다
-      roundingUnit: 100, // v1 전용 필드(2026-08-21 삭제). v2에서는 삭제되어야 한다
+      treasurerId: 'm1', // v1 전용 필드(2026-08-21 삭제)
+      roundingUnit: 100, // v1 전용 필드(2026-08-21 삭제)
     };
     window.localStorage.setItem(
       'allcover:session:v1',
@@ -490,23 +609,24 @@ describe('영속성 (C1~C4): localStorage 라운드트립', () => {
     // members가 빈 배열이 되면 실패다 — 마이그레이션이 아니라 초기화가 일어난 것이다
     expect(s.members).toEqual(v1Settlement.members);
     expect(s.rounds).toEqual(v1Settlement.rounds);
-    expect(s.extras).toEqual(v1Settlement.extras);
     expect(s.gameFeePerGame).toBe(4000);
     expect(s.shoeFee).toBe(2000);
     expect(s.shoeRenters).toEqual(['m1']);
 
-    expect(s.mode).toBe('bet'); // 채워짐 (기존 동작 보존 극성)
-    expect(s.version).toBe(2);
-    expect('roundingUnit' in s).toBe(false); // 삭제됨
-    expect('defaultAnte' in s).toBe(false); // 삭제됨 (2026-08-21, Settlement.defaultAnte 필드 자체가 없어짐)
-    expect('treasurerId' in s).toBe(false); // 삭제됨 (2026-08-21, Settlement.treasurerId 필드 자체가 없어짐)
+    expect(s.version).toBe(3);
+    expect('mode' in s).toBe(false); // v2가 넣었다가 v3가 지운 필드
+    expect('roundingUnit' in s).toBe(false); // v1 전용 필드 (v1 -> v2 단계에서 삭제)
+    expect('defaultAnte' in s).toBe(false);
+    expect('treasurerId' in s).toBe(false);
 
-    // 이건 정상 마이그레이션이지 손상이 아니므로 손상 백업이 생기면 안 된다
+    // v1 -> v3까지 extras 전환도 끝나 있어야 한다. 3,000원을 2명이 나눠 각 1,500원
+    expect(s.extras).toEqual([{ id: 'e1', label: '음료', amounts: { m1: 1500, m2: 1500 } }]);
+
     const backupKey = Object.keys(window.localStorage).find((k) => k.startsWith('allcover:corrupt:'));
     expect(backupKey).toBeUndefined();
   });
 
-  it('G7: 버전이 1도 2도 아니면(알 수 없는 버전) CURRENT_VERSION이 2로 오른 뒤에도 여전히 백업 후 초기화된다', async () => {
+  it('G7: 버전이 1/2/3 어느 것도 아니면(알 수 없는 버전) 여전히 백업 후 초기화된다', async () => {
     window.localStorage.setItem(
       'allcover:session:v1',
       JSON.stringify({
@@ -524,15 +644,15 @@ describe('영속성 (C1~C4): localStorage 라운드트립', () => {
     expect(backupKey).toBeDefined();
   });
 
-  it('G7: prefs도 v1(roundingUnit·defaultAnte 있음, mode 없음)에서 요금/최근 이름 보존하며 v2로 마이그레이션된다', async () => {
+  it('prefs v1 -> v3: roundingUnit·defaultAnte가 사라지고 요금/최근 이름은 보존된다', async () => {
     window.localStorage.setItem(
       'allcover:prefs:v1',
       JSON.stringify({
         state: {
           gameFeePerGame: 4000,
           shoeFee: 2000,
-          defaultAnte: 1000, // v1 전용 필드(2026-08-21 삭제). v2에서는 삭제되어야 한다
-          roundingUnit: 100, // v1 전용 필드(2026-08-21 삭제). v2에서는 삭제되어야 한다
+          defaultAnte: 1000, // v1 전용 필드(2026-08-21 삭제)
+          roundingUnit: 100, // v1 전용 필드(2026-08-21 삭제)
           recentMemberNames: ['영희', '철수'],
         },
         version: 1,
@@ -544,9 +664,35 @@ describe('영속성 (C1~C4): localStorage 라운드트립', () => {
     expect(p.gameFeePerGame).toBe(4000);
     expect(p.shoeFee).toBe(2000);
     expect(p.recentMemberNames).toEqual(['영희', '철수']);
-    expect(p.mode).toBe('bet');
+    expect('mode' in p).toBe(false); // v2가 넣었다가 v3가 지운 필드
     expect('roundingUnit' in p).toBe(false);
     expect('defaultAnte' in p).toBe(false);
+
+    const backupKey = Object.keys(window.localStorage).find((k) => k.startsWith('allcover:corrupt:'));
+    expect(backupKey).toBeUndefined();
+  });
+
+  it('prefs v2 -> v3: mode만 사라지고 요금/최근 이름은 보존된다', async () => {
+    window.localStorage.setItem(
+      'allcover:prefs:v1',
+      JSON.stringify({
+        state: {
+          // 기본값(0)과 다른 값이어야 "보존됐다"가 의미를 갖는다
+          gameFeePerGame: 5000,
+          shoeFee: 1500,
+          mode: 'normal', // v3에서 삭제되어야 한다
+          recentMemberNames: ['민수', '영희'],
+        },
+        version: 2,
+      })
+    );
+
+    const { usePrefsStore: reloaded } = await import('./usePrefsStore');
+    const p = reloaded.getState();
+    expect(p.gameFeePerGame).toBe(5000);
+    expect(p.shoeFee).toBe(1500);
+    expect(p.recentMemberNames).toEqual(['민수', '영희']);
+    expect('mode' in p).toBe(false);
 
     const backupKey = Object.keys(window.localStorage).find((k) => k.startsWith('allcover:corrupt:'));
     expect(backupKey).toBeUndefined();
@@ -557,7 +703,7 @@ describe('영속성 (C1~C4): localStorage 라운드트립', () => {
     // state를 그대로 쓴다. settlement가 null이면 calc.ts가 렌더 중 TypeError로 죽는다.
     window.localStorage.setItem(
       'allcover:session:v1',
-      JSON.stringify({ state: { settlement: null }, version: 2 })
+      JSON.stringify({ state: { settlement: null }, version: 3 })
     );
 
     const { useSettlementStore: reloaded } = await import('./useSettlementStore');
@@ -573,7 +719,7 @@ describe('영속성 (C1~C4): localStorage 라운드트립', () => {
   it('C3(LOW 수정): prefs도 버전 일치 + 모양이 깨진 값이면 백업 후 초기화된다', async () => {
     window.localStorage.setItem(
       'allcover:prefs:v1',
-      JSON.stringify({ state: { gameFeePerGame: '오억원', recentMemberNames: null }, version: 2 })
+      JSON.stringify({ state: { gameFeePerGame: '오억원', recentMemberNames: null }, version: 3 })
     );
 
     const { usePrefsStore: reloaded } = await import('./usePrefsStore');
@@ -604,58 +750,40 @@ describe('영속성 (C1~C4): localStorage 라운드트립', () => {
   });
 });
 
-describe('duplicateRound — 정산 모드에서는 내기 필드를 복제하지 않는다 (F4)', () => {
+describe('duplicateRound — 판을 통째로 복제한다 (전역 모드 게이트 제거)', () => {
   beforeEach(() => {
     usePrefsStore.setState({ ...initialPrefs });
     useSettlementStore.getState().resetSession();
   });
 
-  it('정산 모드에서 복제한 판은 내기 필드가 비어 있다', () => {
+  it('method가 none인 판도 transferSource/transferAmount까지 그대로 복제된다', () => {
+    // 이전에는 mode === 'normal' 이면 내기 필드를 비우고 복제했다. 전역 모드가 사라졌으므로
+    // (2026-08-24) 복제는 method 값과 무관하게 언제나 원본 그대로다.
     const s = useSettlementStore.getState();
     s.addMember('a');
     s.addMember('b');
-    const memberId = useSettlementStore.getState().settlement.members[0]!.id;
 
     s.addRound();
     const r1 = useSettlementStore.getState().settlement.rounds[0]!.id;
-    s.setMethod(r1, 'pot');
+    s.setMethod(r1, 'none');
     s.setAnte(r1, 1000);
-    s.tapRank(r1, memberId);
-    s.setPayout(r1, [4000]);
-    // transferSource/transferAmount 를 기본값과 다르게 만들어야 초기화 여부를 검증할 수 있다.
-    // 기본값(gameFee / 0) 그대로 두면 초기화해도 값이 같아 테스트가 공허해진다.
+    // 기본값(gameFee / 0)과 다르게 만들어야 복제 여부가 값으로 드러난다
     s.setTransfer(r1, { transferSource: 'custom', transferAmount: 5000 });
-
-    // 복제 전 원본을 캡처해둔다 — 복제 후 rounds[0] 을 읽으면 대조가 무의미해진다.
     const original = useSettlementStore.getState().settlement.rounds[0]!;
 
-    // 정산 모드로 전환하면 내기 UI 는 숨겨지지만 "복제" 버튼은 남아 있다.
-    // 사용자에게 그 버튼은 "같은 멤버로 한 판 더" 라는 뜻이다.
-    s.setMode('normal');
     s.duplicateRound(r1);
 
     const copy = useSettlementStore.getState().settlement.rounds[1]!;
+    expect(copy.id).not.toBe(r1);
     expect(copy.method).toBe('none');
-    expect(copy.ante).toBe(0);
-    expect(copy.payout).toEqual([]);
-    expect(copy.ranking).toEqual([]);
-    expect(copy.losers).toEqual([]);
-    // transferSource/transferAmount 도 초기화된다 — addRound 와 같은 규칙이어야 한다 (N4).
-    // 남아 있으면 내기 모드 복귀 후 "판비 내주기" 를 누르는 순간 입력한 적 없는 금액이 채워진다.
-    expect(copy.transferSource).toBe('gameFee');
-    expect(copy.transferAmount).toBe(0);
-    // 참여자와 팀 편성은 모드와 무관하게 유용하므로 그대로 복제한다.
-    // 정산 모드에서 "복제" 의 유일한 존재 이유가 이것이므로 원본과 직접 대조해야 한다.
+    expect(copy.ante).toBe(1000);
+    expect(copy.transferSource).toBe('custom');
+    expect(copy.transferAmount).toBe(5000);
     expect(copy.participants).toEqual(original.participants);
     expect(copy.teams).toEqual(original.teams);
-
-    // 원본은 그대로 남아야 한다 (비파괴)
-    const after = useSettlementStore.getState().settlement.rounds[0]!;
-    expect(after.method).toBe('pot');
-    expect(after.payout).toEqual([4000]);
   });
 
-  it('내기 모드에서 복제한 판은 내기 필드를 그대로 가져온다', () => {
+  it('내기 판을 복제하면 내기 필드를 그대로 가져오고 배열은 원본과 공유하지 않는다', () => {
     const s = useSettlementStore.getState();
     s.addMember('a');
     s.addMember('b');
@@ -674,5 +802,10 @@ describe('duplicateRound — 정산 모드에서는 내기 필드를 복제하�
     expect(copy.ante).toBe(1000);
     expect(copy.payout).toEqual([4000]);
     expect(copy.ranking).toEqual([[memberId]]);
+
+    // 복제본의 순위를 바꿔도 원본이 따라 움직이면 안 된다 (얕은 복사 회귀 방어)
+    s.tapRank(copy.id, memberId);
+    expect(useSettlementStore.getState().settlement.rounds[1]!.ranking).toEqual([]);
+    expect(useSettlementStore.getState().settlement.rounds[0]!.ranking).toEqual([[memberId]]);
   });
 });

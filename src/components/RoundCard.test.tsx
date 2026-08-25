@@ -34,7 +34,6 @@ function seed(round: Round, members = MEMBERS): void {
     version: 1,
     id: 's1',
     date: '2026-08-21T00:00:00.000Z',
-    mode: 'bet',
     members,
     gameFeePerGame: 4000,
     shoeFee: 2000,
@@ -84,12 +83,13 @@ describe('RoundCard', () => {
   });
 
   it('팀 상태 요약을 보여준다', () => {
-    seed(makeRound({ teams: [['a', 'b'], ['c', 'd']] }));
+    seed(makeRound({ method: 'pot', teams: [['a', 'b'], ['c', 'd']] }));
     render(<Harness />);
     expect(screen.getByText('2팀 (2:2)')).toBeInTheDocument();
   });
 
   it('개인전이면 팀 요약이 "개인전"이다', () => {
+    seed(makeRound({ method: 'pot' }));
     render(<Harness />);
     expect(screen.getByText('개인전')).toBeInTheDocument();
   });
@@ -171,6 +171,7 @@ describe('RoundCard', () => {
   });
 
   it('팀 편성 변경 버튼으로 TeamSheet를 연다', async () => {
+    seed(makeRound({ method: 'pot' }));
     const user = userEvent.setup();
     render(<Harness />);
 
@@ -179,7 +180,12 @@ describe('RoundCard', () => {
     expect(screen.getByRole('dialog', { name: '팀 편성' })).toBeInTheDocument();
   });
 
+  /**
+   * 히트 영역은 **실제 클릭 대상(button)** 에서 잰다. 감싸는 컨테이너에 min-h 를 붙이고
+   * 안쪽 버튼은 28×36px 이었던 사고가 있었으므로, 컨테이너를 보는 검사로 대체하면 안 된다.
+   */
   it('E1/E2: 칩 목록은 flex-wrap이고 칩/버튼이 44px 히트 영역을 갖는다', () => {
+    seed(makeRound({ method: 'pot' }));
     render(<Harness />);
 
     const group = screen.getByRole('group', { name: '참여자' });
@@ -188,8 +194,17 @@ describe('RoundCard', () => {
     expect(chip.className).toMatch(/min-w-\[44px\]/);
     expect(chip.parentElement?.className).toMatch(/flex-wrap/);
 
-    for (const name of ['복제', '삭제', '팀 편성 변경', '없음', '판돈 분배', '판비 내주기']) {
-      expect(screen.getByRole('button', { name }).className).toMatch(/min-h-\[44px\]/);
+    for (const name of ['복제', '삭제', '팀 편성 변경', '정산', '내기', '판돈 분배', '판비 내주기']) {
+      const button = screen.getByRole('button', { name });
+      expect(button.className, name).toMatch(/min-h-\[44px\]/);
+      expect(button.className, name).toMatch(/min-w-\[44px\]/);
+    }
+
+    // 두 세그먼트 모두 flex-wrap 이라 320px 에서 줄바꿈될지언정 가로로 넘치지 않는다
+    for (const legend of ['정산 방식', '내기 방식']) {
+      const seg = screen.getByRole('group', { name: legend });
+      const first = within(seg).getAllByRole('button')[0];
+      expect(first.parentElement?.className, legend).toMatch(/flex-wrap/);
     }
   });
 });
@@ -256,15 +271,16 @@ describe('RoundCard — 가짜 불일치 경고 (finding #3)', () => {
 });
 
 /**
- * §5-A-2 정산 모드 / 내기 모드. 인수조건 G3, G5.
+ * 2단 세그먼트 — 1단 `정산 / 내기`, 2단 `판돈 분배 / 판비 내주기` (2026-08-24).
  *
- * 정산 모드에서는 판이 "누가 몇 판 쳤나"만 센다. 내기 UI를 전부 숨기되
- * 라운드에 들어 있는 method/ante/payout/ranking/losers/teams 는 **지우지 않는다.**
- * 잘못 눌렀을 때 순위·배당이 날아가면 복구할 방법이 없기 때문이다.
+ * 전역 모드 토글이 없어졌으므로 정산/내기는 판마다 `Round.method` 로 정해진다.
+ * 정산('none')을 고른 판은 내기 UI를 전부 숨기되, 라운드에 들어 있는
+ * ante/payout/ranking/losers/teams 는 **지우지 않는다.** 잘못 눌렀을 때
+ * 순위·배당이 날아가면 복구할 방법이 없기 때문이다.
  */
-describe('RoundCard — 정산 모드 게이트 (G3, G5)', () => {
+describe('RoundCard — 정산/내기 2단 세그먼트', () => {
   /** 내기 입력이 꽉 찬 라운드. imbalance 도 0이 아니다 (pot 4,000 vs 배당 3,000) */
-  function loadedRound(): Round {
+  function loadedRound(patch: Partial<Round> = {}): Round {
     return makeRound({
       method: 'pot',
       teams: [
@@ -275,46 +291,46 @@ describe('RoundCard — 정산 모드 게이트 (G3, G5)', () => {
       payout: [3000],
       losers: ['c', 'd'],
       ante: 1000,
+      ...patch,
     });
   }
 
-  function seedWithMode(mode: 'normal' | 'bet', round: Round): void {
-    seed(round);
-    useSettlementStore.setState((s) => ({ settlement: { ...s.settlement, mode } }));
-  }
-
   const BET_UI_QUERIES: [string, () => HTMLElement | null][] = [
-    ['방식 세그먼트 없음', () => screen.queryByRole('button', { name: '없음' })],
-    ['방식 세그먼트 판돈 분배', () => screen.queryByRole('button', { name: '판돈 분배' })],
-    ['방식 세그먼트 판비 내주기', () => screen.queryByRole('button', { name: '판비 내주기' })],
+    ['내기 방식 세그먼트', () => screen.queryByRole('group', { name: '내기 방식' })],
+    ['내기 방식 판돈 분배', () => screen.queryByRole('button', { name: '판돈 분배' })],
+    ['내기 방식 판비 내주기', () => screen.queryByRole('button', { name: '판비 내주기' })],
     ['인당 판돈 입력', () => screen.queryByLabelText('인당 판돈')],
     ['RankPicker', () => screen.queryByRole('group', { name: '순위' })],
     ['PayoutEditor', () => screen.queryByLabelText('1등 인당 배당')],
     ['팀 편성 버튼', () => screen.queryByRole('button', { name: '팀 편성 변경' })],
   ];
 
-  it('G3: 정산 모드에서는 내기 UI가 전부 렌더되지 않는다', () => {
-    seedWithMode('normal', loadedRound());
+  it('정산을 고른 판에서는 내기 UI가 전부 렌더되지 않는다', () => {
+    seed(loadedRound({ method: 'none' }));
     render(<Harness />);
 
     for (const [label, query] of BET_UI_QUERIES) {
       expect(query(), label).toBeNull();
     }
-    // 진 쪽 선택도 없다 (transfer 로 바꿔도 마찬가지지만, 방식 세그먼트 자체가 없다)
     expect(screen.queryByRole('group', { name: '진 쪽' })).toBeNull();
+
+    // 1단 세그먼트는 남아 있고 "정산" 이 선택된 상태다
+    expect(screen.getByRole('button', { name: '정산' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '내기' })).toHaveAttribute('aria-pressed', 'false');
   });
 
-  it('G3: 내기 모드에서는 같은 라운드에서 내기 UI가 전부 보인다', () => {
-    seedWithMode('bet', loadedRound());
+  it('내기를 고른 판에서는 같은 라운드에서 내기 UI가 전부 보인다', () => {
+    seed(loadedRound());
     render(<Harness />);
 
     for (const [label, query] of BET_UI_QUERIES) {
       expect(query(), label).not.toBeNull();
     }
+    expect(screen.getByRole('button', { name: '내기' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('G3: 정산 모드에서도 판 번호·참여자·복제/삭제는 남는다', async () => {
-    seedWithMode('normal', loadedRound());
+  it('정산을 고른 판에서도 판 번호·참여자·복제/삭제는 남는다', async () => {
+    seed(loadedRound({ method: 'none' }));
     const user = userEvent.setup();
     render(<Harness />);
 
@@ -322,45 +338,89 @@ describe('RoundCard — 정산 모드 게이트 (G3, G5)', () => {
     expect(screen.getByRole('button', { name: '복제' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '삭제' })).toBeInTheDocument();
 
-    // 참여자 체크는 정산 모드의 핵심 기능이라 계속 동작해야 한다
+    // 참여자 체크는 정산 판의 핵심 기능이라 계속 동작해야 한다
     const group = screen.getByRole('group', { name: '참여자' });
     await user.click(within(group).getByRole('button', { name: '나다' }));
     expect(currentRound().participants).toEqual(['a', 'c', 'd']);
   });
 
-  it('G5: imbalance가 0이 아닌 라운드라도 정산 모드면 경고가 렌더되지 않는다', () => {
-    const round = loadedRound();
-    // 내기 모드에서는 실제로 경고가 뜨는 라운드임을 먼저 고정한다
-    seedWithMode('bet', round);
-    const bet = render(<Harness />);
-    expect(screen.getByRole('alert')).toHaveTextContent('판돈 불일치');
-    bet.unmount();
-
-    seedWithMode('normal', round);
+  it('정산 버튼을 누르면 method 가 none 이 되고 내기 UI가 사라진다', async () => {
+    seed(loadedRound());
+    const user = userEvent.setup();
     render(<Harness />);
+
+    expect(screen.getByRole('group', { name: '내기 방식' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '정산' }));
+
+    expect(currentRound().method).toBe('none');
+    for (const [label, query] of BET_UI_QUERIES) {
+      expect(query(), label).toBeNull();
+    }
+  });
+
+  it('정산 판에서 내기를 누르면 판돈 분배로 시작한다', async () => {
+    seed(makeRound({ method: 'none' }));
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    await user.click(screen.getByRole('button', { name: '내기' }));
+
+    expect(currentRound().method).toBe('pot');
+    expect(screen.getByLabelText('인당 판돈')).toBeInTheDocument();
+  });
+
+  it('판비 내주기를 고른 뒤 정산을 거쳐 내기로 돌아오면 판비 내주기가 복원된다', async () => {
+    seed(loadedRound({ method: 'transfer' }));
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    await user.click(screen.getByRole('button', { name: '정산' }));
+    await user.click(screen.getByRole('button', { name: '내기' }));
+
+    expect(currentRound().method).toBe('transfer');
+    expect(screen.getByRole('group', { name: '진 쪽' })).toBeInTheDocument();
+  });
+
+  it('imbalance가 0이 아닌 라운드라도 정산을 고르면 경고가 렌더되지 않는다', async () => {
+    seed(loadedRound());
+    const user = userEvent.setup();
+    render(<Harness />);
+
+    // 내기일 때는 실제로 경고가 뜨는 라운드임을 먼저 고정한다
+    expect(screen.getByRole('alert')).toHaveTextContent('판돈 불일치');
+
+    await user.click(screen.getByRole('button', { name: '정산' }));
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('G2/비파괴: 정산 모드로 렌더해도 라운드의 내기 데이터가 그대로 남는다', () => {
-    const round = loadedRound();
-    const before = {
-      method: round.method,
-      ante: round.ante,
-      payout: [...round.payout],
-      ranking: round.ranking.map((g) => [...g]),
-      losers: [...round.losers],
-      teams: round.teams?.map((t) => [...t]) ?? null,
-    };
-
-    seedWithMode('normal', round);
+  /**
+   * 비파괴 왕복. 정산으로 바꿨다 내기로 돌아왔을 때 입력이 살아 있어야 한다.
+   * `method` 는 정의상 'none' 을 거치므로 제외하고, **데이터 필드**만 비교한다.
+   */
+  it('비파괴: 정산 -> 내기 왕복 후 ranking/payout/losers/teams/ante 가 그대로다', async () => {
+    seed(loadedRound());
+    const user = userEvent.setup();
     render(<Harness />);
 
-    const after = currentRound();
-    expect(after.method).toEqual(before.method);
-    expect(after.ante).toEqual(before.ante);
-    expect(after.payout).toEqual(before.payout);
-    expect(after.ranking).toEqual(before.ranking);
-    expect(after.losers).toEqual(before.losers);
-    expect(after.teams).toEqual(before.teams);
+    const pick = (r: Round) => ({
+      ante: r.ante,
+      payout: r.payout,
+      ranking: r.ranking,
+      losers: r.losers,
+      teams: r.teams,
+    });
+    const before = pick(currentRound());
+
+    await user.click(screen.getByRole('button', { name: '정산' }));
+    expect(pick(currentRound()), '정산으로 바꾼 직후').toEqual(before);
+
+    await user.click(screen.getByRole('button', { name: '내기' }));
+    expect(pick(currentRound()), '내기로 되돌린 뒤').toEqual(before);
+    expect(currentRound().method).toBe('pot');
+
+    // 화면에도 그대로 살아 있어야 한다 — 스토어만 보면 렌더가 죽어도 통과한다
+    expect(screen.getByLabelText('인당 판돈')).toHaveDisplayValue('1,000');
+    expect(screen.getByLabelText('1등 인당 배당')).toHaveDisplayValue('3,000');
   });
 });

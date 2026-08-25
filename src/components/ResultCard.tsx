@@ -1,11 +1,11 @@
 /**
  * 결과 카드 — 캡처(html-to-image) 대상 컴포넌트.
  * 계획서: .omc/plans/2026-08-21-allcover-bowling-settlement.md §3 인수조건 D5, D7, B3 / §5 R1, R9
- * §5-A-2 G4: `settlement.mode === 'normal'`(정산 모드)이면 "내기±" 열과 판별 내기 요약(D7)을 숨긴다.
+ * G4: 내기 판이 하나도 없으면 "내기±" 열과 판별 내기 요약(D7)을 숨긴다.
  *
- * 극성 주의: `mode === 'normal'` 일 때만 숨기고, 그 외(= 'bet' 이거나 구버전 저장값처럼
- * mode 가 없는 경우)는 그대로 보여준다. 반대로 `mode === 'bet'` 일 때만 보여주는 식으로 쓰면
- * mode 가 undefined 인 낡은 데이터에서 내기 정보가 조용히 사라진다 (계획서 §5-A-3와 같은 함정).
+ * 판정은 전역 플래그가 아니라 `rounds` 에서 파생한다 (2026-08-24). 예전에는 `settlement.mode`
+ * 라는 별도 상태를 봤는데, 그러면 mode 가 없는 구버전 데이터에서 극성을 잘못 잡아 내기 정보가
+ * 조용히 사라지는 함정이 있었다. 이제는 판이 하나라도 내기면 보여주므로 그 함정 자체가 없다.
  *
  * 총무/송금 안내는 2026-08-21 사용자 요청으로 제거됐다. 볼링장에서는 누가 카드로 긁었는지
  * 다들 아는데 앱이 굳이 지정을 받을 이유가 없다는 판단. 결과 카드는 "누가 얼마"와 총액만
@@ -27,11 +27,58 @@
  */
 
 import { forwardRef } from 'react';
-import type { Member, MemberResult, Round, RoundBreakdown, Settlement } from '../types';
+import type { Extra, Member, MemberResult, Round, RoundBreakdown, Settlement } from '../types';
 import { formatDate, formatKRW, formatSigned } from '../lib/format';
 
 /** R9: 13명 이상이면 행 높이·폰트를 축소해 카드가 지나치게 길어지지 않게 한다 */
 const COMPACT_THRESHOLD = 13;
+
+/** 카드 기본 폭. 기타 항목이 하나뿐이던 시절의 고정값이며 캡처 PNG 의 기준 가로다 */
+const BASE_CARD_WIDTH = 540;
+/** 기타 열이 하나 늘 때마다 넓히는 폭 */
+const EXTRA_COLUMN_WIDTH = 70;
+/**
+ * 카드가 넓어져도 넘지 않는 상한.
+ * 캡처 PNG 가 너무 넓으면 메신저가 화면 폭에 맞춰 축소해버려 정작 금액이 안 읽힌다.
+ */
+const MAX_CARD_WIDTH = 720;
+/** 기타비용을 항목명 열로 펼칠 때의 최대 열 수 */
+const MAX_EXTRA_COLUMNS = 4;
+
+/** 표에 그릴 기타비용 열 하나. `ids` 가 여러 개면 그 항목들을 합친 열이다 */
+export type ExtraColumn = { label: string; ids: string[] };
+
+/**
+ * 기타비용 항목을 표의 열로 펼친다 (2026-08-25).
+ *
+ * 예전에는 항목이 몇 개든 "기타" 한 열에 합계만 찍혀서, 카드를 받은 사람이 그 금액이
+ * 무엇 때문인지 알 수 없었다. `Extra.amounts` 가 사람별 금액 맵이라 "누가 어느 항목에
+ * 얼마" 를 정확히 아는데도 표에서 뭉개고 있던 셈이다.
+ *
+ * 항목이 많으면 열이 무한정 늘어 카드가 읽을 수 없게 넓어지므로 `maxCols` 에서 자른다.
+ * 자를 때 뒤쪽을 **버리지 않고** "기타" 한 열로 합친다 — 버리면 열 합계가 `MemberResult.extra`
+ * 와 어긋나 카드가 조용히 거짓말을 한다.
+ */
+export function extraColumns(extras: Extra[], maxCols = MAX_EXTRA_COLUMNS): ExtraColumn[] {
+  if (extras.length === 0) return [];
+  const cap = Math.max(1, maxCols);
+  if (extras.length <= cap) return extras.map((e) => ({ label: e.label, ids: [e.id] }));
+  return [
+    ...extras.slice(0, cap - 1).map((e) => ({ label: e.label, ids: [e.id] })),
+    { label: '기타', ids: extras.slice(cap - 1).map((e) => e.id) },
+  ];
+}
+
+/**
+ * 기타 열 수에 맞춘 카드 폭.
+ *
+ * 첫 열은 폭을 늘리지 않는다 — 기존 540px 표에 이미 "기타" 열 하나가 들어가 있었다.
+ * 둘째 열부터 항목당 70px 씩 넓히고 상한에서 자른다.
+ */
+export function cardWidth(columnCount: number): number {
+  const widened = Math.max(0, columnCount - 1) * EXTRA_COLUMN_WIDTH;
+  return Math.min(MAX_CARD_WIDTH, BASE_CARD_WIDTH + widened);
+}
 
 export type ResultCardProps = {
   settlement: Settlement;
@@ -87,24 +134,30 @@ export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function R
   { settlement, results, breakdowns, totalImbalance, roundingSurplus = 0, unassignedExtras = [] },
   ref,
 ) {
-  const { date, title, members, rounds, gameFeePerGame, mode } = settlement;
+  const { date, title, members, rounds, gameFeePerGame } = settlement;
   const names = nameLookup(members);
   const nameOf = (id: string) => names[id] ?? id;
   const total = results.reduce((sum, r) => sum + r.rounded, 0);
-  // G4: 정산 모드에서만 숨긴다. mode 가 'bet'이든 undefined(구버전 데이터)든 그대로 보여준다.
-  const hideBet = mode === 'normal';
+  // G4: 판이 하나라도 내기면 내기 표시를 남긴다. 전부 정산('none')일 때만 숨긴다.
+  const hideBet = !rounds.some((r) => r.method !== 'none');
 
   const roundImbalances = breakdowns.filter((b) => b.imbalance !== 0);
   const compact = members.length >= COMPACT_THRESHOLD;
   const cellPad = compact ? 'py-1' : 'py-2';
   const bodyTextSize = compact ? 'text-xs' : 'text-sm';
 
+  // 기타비용은 "기타" 한 열이 아니라 항목명 열들로 편다. 항목이 없으면 열 자체가 없다.
+  const columns = extraColumns(settlement.extras);
+  const amountsById = new Map(settlement.extras.map((e) => [e.id, e.amounts]));
+  const columnAmount = (column: ExtraColumn, memberId: string): number =>
+    column.ids.reduce((sum, id) => sum + (amountsById.get(id)?.[memberId] ?? 0), 0);
+
   return (
     <div
       ref={ref}
       data-testid="result-card"
       style={{
-        width: 540,
+        width: cardWidth(columns.length),
         backgroundColor: 'var(--card-bg)',
         color: 'var(--card-fg)',
         border: '1px solid var(--card-border)',
@@ -180,7 +233,11 @@ export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function R
             <th className="py-1 text-right font-normal">판수</th>
             <th className="py-1 text-right font-normal">게임비</th>
             <th className="py-1 text-right font-normal">신발</th>
-            <th className="py-1 text-right font-normal">기타</th>
+            {columns.map((c) => (
+              <th key={c.ids.join(',')} className="py-1 text-right font-normal">
+                {c.label}
+              </th>
+            ))}
             {!hideBet && <th className="py-1 text-right font-normal">내기±</th>}
             <th className="py-1 text-right font-normal">최종</th>
           </tr>
@@ -207,7 +264,11 @@ export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function R
               <td className={`${cellPad} text-right`}>{r.gameCount}</td>
               <td className={`${cellPad} text-right`}>{formatKRW(r.gameFee)}</td>
               <td className={`${cellPad} text-right`}>{formatKRW(r.shoe)}</td>
-              <td className={`${cellPad} text-right`}>{formatKRW(r.extra)}</td>
+              {columns.map((c) => (
+                <td key={c.ids.join(',')} className={`${cellPad} text-right`}>
+                  {formatKRW(columnAmount(c, r.memberId))}
+                </td>
+              ))}
               {!hideBet && (
                 <td
                   className={`${cellPad} text-right`}
@@ -255,7 +316,7 @@ export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function R
         </p>
       )}
 
-      {/* 판별 내기 요약 (D7) — 정산 모드에서는 숨긴다 (G4) */}
+      {/* 판별 내기 요약 (D7) — 전 판이 정산이면 숨긴다 (G4) */}
       {!hideBet && rounds.length > 0 && (
         <div className="mt-4">
           <p className="mb-2 text-sm font-semibold" style={{ color: 'var(--card-muted)' }}>

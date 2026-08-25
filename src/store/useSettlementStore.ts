@@ -7,24 +7,26 @@
 import { nanoid } from 'nanoid';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { BetMethod, Extra, Member, Round, Settlement, SettlementMode } from '../types';
+import type { BetMethod, Extra, Member, Round, Settlement } from '../types';
+import { splitEvenly } from '../lib/money';
 import { createGuardedStorage, backupCorruptState, clearCorruptBackups } from './persistGuard';
-import { initialPrefs, usePrefsStore, type Prefs, type PrefsFees } from './usePrefsStore';
+import { initialPrefs, usePrefsStore, type PrefsFees } from './usePrefsStore';
 
 const STORAGE_KEY = 'allcover:session:v1';
 /**
  * v2: `roundingUnit` 삭제(1원 올림으로 고정, 계획서 §5-A-1), `mode` 추가(§5-A-2).
- * v1 -> v2는 실제 마이그레이션을 쓴다 — 버전만 올리고 무조건 초기화하면 진행 중인
- * 정산이 전부 날아간다 (계획서 §5-A-3). "그 외 알 수 없는 버전"만 백업 후 초기화한다.
+ * v3: `mode` 삭제, `Extra.amount`/`Extra.splitAmong` -> `Extra.amounts` (2026-08-24).
+ *
+ * 어느 단계도 버전만 올리고 초기화하지 않는다 — 진행 중인 정산이 통째로 날아간다 (§5-A-3).
+ * "그 외 알 수 없는 버전"만 백업 후 초기화한다.
  */
-const CURRENT_VERSION = 2;
+const CURRENT_VERSION = 3;
 
-function createEmptySettlement(prefs: Pick<Prefs, 'gameFeePerGame' | 'shoeFee' | 'mode'>): Settlement {
+function createEmptySettlement(prefs: PrefsFees): Settlement {
   return {
     version: CURRENT_VERSION,
     id: nanoid(),
     date: new Date().toISOString(),
-    mode: prefs.mode,
     members: [],
     gameFeePerGame: prefs.gameFeePerGame,
     shoeFee: prefs.shoeFee,
@@ -38,13 +40,26 @@ function createEmptySettlement(prefs: Pick<Prefs, 'gameFeePerGame' | 'shoeFee' |
  * localStorage에서 읽은 값이 실제로 Settlement 모양인지 최소한으로 검사한다.
  * 버전이 일치하면 zustand persist가 migrate 없이 이 값을 그대로 쓰므로,
  * 여기서 걸러내지 않으면 `{ settlement: null }` 같은 값이 그대로 들어가 계산 단계에서 크래시한다.
+ *
+ * `extras[].amounts`까지 보는 이유: `calc.ts`가 `Object.entries(item.amounts)`를 도는데
+ * v3 버전 딱지를 달고 옛 모양(`amount`/`splitAmong`)이 들어오면 렌더 중 TypeError로 죽는다.
+ * 단 그 검사는 **현재 버전일 때만** 한다 — 옛 버전 값은 옛 모양인 게 정상이고, 여기서
+ * 걸러버리면 마이그레이션이 돌기도 전에 진행 중인 정산이 초기화된다.
  */
-function isValidSettlementState(state: unknown): boolean {
+function isValidSettlementState(state: unknown, version: number): boolean {
   if (typeof state !== 'object' || state === null) return false;
   const settlement = (state as Record<string, unknown>).settlement;
   if (typeof settlement !== 'object' || settlement === null) return false;
   const s = settlement as Record<string, unknown>;
-  return Array.isArray(s.members) && Array.isArray(s.rounds) && Array.isArray(s.extras);
+  if (!Array.isArray(s.members) || !Array.isArray(s.rounds) || !Array.isArray(s.extras)) {
+    return false;
+  }
+  if (version !== CURRENT_VERSION) return true;
+  return s.extras.every((e) => {
+    if (typeof e !== 'object' || e === null) return false;
+    const amounts = (e as Record<string, unknown>).amounts;
+    return typeof amounts === 'object' && amounts !== null;
+  });
 }
 
 /**
@@ -61,6 +76,23 @@ function isValidSettlementState(state: unknown): boolean {
  */
 function toWon(n: number): number {
   return Number.isFinite(n) ? Math.round(n) : 0;
+}
+
+/**
+ * 기타비용의 사람별 금액 맵을 정규화한다.
+ *
+ * 정수화(`toWon`)한 뒤 **0 이하는 키째로 버린다.** 0원인 사람은 그 항목을 안 먹은 것이고,
+ * 안 먹은 사람을 굳이 저장할 이유가 없다. 음수·NaN·Infinity도 같은 규칙으로 사라진다
+ * (`toWon`이 비유한값을 0으로 눕힌다). 덕분에 "키가 있으면 청구 대상"이 불변식이 되어
+ * `calc.ts`의 미수금(unassignedExtras) 판정이 단순해진다.
+ */
+function normalizeAmounts(amounts: Record<string, number>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [memberId, raw] of Object.entries(amounts)) {
+    const won = toWon(raw);
+    if (won > 0) out[memberId] = won;
+  }
+  return out;
 }
 
 /** 그룹(개인 또는 팀) 두 개가 같은 멤버 집합인지 비교. tapRank의 재탭 판별에 쓴다 */
@@ -109,12 +141,12 @@ type SettlementState = {
 
   toggleShoeRenter: (memberId: string) => void;
   addExtra: (extra: Omit<Extra, 'id'>) => void;
+  /** 한 항목의 사람별 금액을 통째로 교체한다. 균등 분배도 같은 값을 채워 넣어 이 액션으로 표현한다 */
+  setExtraAmounts: (extraId: string, amounts: Record<string, number>) => void;
   removeExtra: (extraId: string) => void;
   setFees: (fees: Partial<PrefsFees>) => void;
-  /** 정산 전체에 걸리는 모드 전환. 비파괴적 — 라운드의 method/ante/payout/ranking/losers/teams는 지우지 않는다 */
-  setMode: (mode: SettlementMode) => void;
 
-  /** 세션만 초기화. 요금 프리셋·최근 멤버 이름·모드는 유지된다 (C5) */
+  /** 세션만 초기화. 요금 프리셋·최근 멤버 이름은 유지된다 (C5) */
   resetSession: () => void;
 };
 
@@ -147,11 +179,13 @@ export const useSettlementStore = create<SettlementState>()(
           const members = settlement.members.filter((m) => m.id !== memberId);
           const rounds = settlement.rounds.map((r) => cleanRoundOfMember(r, memberId));
           const shoeRenters = settlement.shoeRenters.filter((id) => id !== memberId);
-          const extras = settlement.extras.map((e) => ({
-            ...e,
-            splitAmong:
-              e.splitAmong === 'all' ? ('all' as const) : e.splitAmong.filter((id) => id !== memberId),
-          }));
+          // 기타비용에서도 그 사람 몫을 지운다. 남겨두면 삭제된 멤버 앞으로 금액이 계속
+          // 잡혀 있다가 calc 단계에서 조용히 증발한다 (calc.ts는 모르는 id를 건너뛴다).
+          const extras = settlement.extras.map((e) => {
+            if (!(memberId in e.amounts)) return e;
+            const { [memberId]: _removed, ...amounts } = e.amounts;
+            return { ...e, amounts };
+          });
           return { settlement: { ...settlement, members, rounds, shoeRenters, extras } };
         });
       },
@@ -173,19 +207,18 @@ export const useSettlementStore = create<SettlementState>()(
         set((state) => {
           const settlement = state.settlement;
           const last = settlement.rounds[settlement.rounds.length - 1];
-          // 정산 모드에서는 내기 필드를 상속하지 않는다 (G2). UI가 숨겨져 있어도 상속이
-          // 계속되면, 정산 모드로 판을 여러 개 만들고 내기 모드로 돌아왔을 때 사용자가
-          // 만든 적 없는 판돈·배당이 붙은 판들을 만나게 된다. participants/teams는
-          // 모드와 무관하게 유용하므로 계속 상속한다.
-          const inheritBetFields = settlement.mode !== 'normal';
+          // 새 판은 언제나 직전 판의 구성을 상속한다. 전역 정산/내기 모드가 사라지면서
+          // (2026-08-24) "정산 모드에서는 내기 필드를 상속하지 않는다"는 분기도 함께 사라졌다.
+          // 이 판이 내기인지 아닌지는 이제 Round.method 하나가 말하므로, method 를 상속하면
+          // 정산만 하는 모임은 'none' 이 계속 이어지고 내기 모임은 판돈이 계속 이어진다.
           const newRound: Round = {
             id: nanoid(),
             participants: last ? [...last.participants] : settlement.members.map((m) => m.id),
             teams: last ? (last.teams ? last.teams.map((t) => [...t]) : null) : null,
-            method: inheritBetFields && last ? last.method : 'none',
+            method: last ? last.method : 'none',
             // 첫 판의 ante는 0에서 시작해 사용자가 그 판에서 직접 입력한다 (defaultAnte 제거, 2026-08-21)
-            ante: inheritBetFields && last ? last.ante : 0,
-            payout: inheritBetFields && last ? [...last.payout] : [],
+            ante: last ? last.ante : 0,
+            payout: last ? [...last.payout] : [],
             ranking: [],
             losers: [],
             transferSource: 'gameFee',
@@ -201,34 +234,15 @@ export const useSettlementStore = create<SettlementState>()(
           const idx = rounds.findIndex((r) => r.id === roundId);
           if (idx === -1) return state;
           const original = rounds[idx];
-          // addRound 의 inheritBetFields 와 같은 규칙이다. 두 곳이 갈리면 안 된다.
-          const copyBetFields = state.settlement.mode !== 'normal';
+          // "복제"는 말 그대로 그 판을 통째로 복사한다. 배열은 새로 떠서 원본과 공유하지 않는다.
           const copy: Round = {
             ...original,
             id: nanoid(),
             participants: [...original.participants],
             teams: original.teams ? original.teams.map((t) => [...t]) : null,
-            // 정산 모드에서는 내기 UI 가 숨겨져 있으므로 "복제" 는 사용자에게 "같은 멤버로
-            // 한 판 더" 라는 뜻이다. 내기 필드까지 복사하면 사용자가 입력한 적 없는 판돈·배당이
-            // 내기 모드로 돌아왔을 때 계산에 반영된다. addRound 가 G2 로 막은 구멍과 같다 (F4).
-            ...(copyBetFields
-              ? {
-                  payout: [...original.payout],
-                  ranking: original.ranking.map((g) => [...g]),
-                  losers: [...original.losers],
-                }
-              : {
-                  method: 'none' as const,
-                  ante: 0,
-                  payout: [],
-                  ranking: [],
-                  losers: [],
-                  // transferSource/transferAmount 도 함께 초기화해야 addRound 와 같은 규칙이 된다.
-                  // 안 그러면 정산 모드에서 복제한 판에 "직접 입력 5,000원" 이 남아 있다가,
-                  // 내기 모드로 돌아와 "판비 내주기" 를 누르는 순간 입력한 적 없는 금액이 채워진다.
-                  transferSource: 'gameFee' as const,
-                  transferAmount: 0,
-                }),
+            payout: [...original.payout],
+            ranking: original.ranking.map((g) => [...g]),
+            losers: [...original.losers],
           };
           const next = [...rounds];
           next.splice(idx + 1, 0, copy);
@@ -365,7 +379,21 @@ export const useSettlementStore = create<SettlementState>()(
         set((state) => ({
           settlement: {
             ...state.settlement,
-            extras: [...state.settlement.extras, { ...extra, amount: toWon(extra.amount), id: nanoid() }],
+            extras: [
+              ...state.settlement.extras,
+              { ...extra, amounts: normalizeAmounts(extra.amounts), id: nanoid() },
+            ],
+          },
+        }));
+      },
+
+      setExtraAmounts: (extraId, amounts) => {
+        set((state) => ({
+          settlement: {
+            ...state.settlement,
+            extras: state.settlement.extras.map((e) =>
+              e.id === extraId ? { ...e, amounts: normalizeAmounts(amounts) } : e
+            ),
           },
         }));
       },
@@ -389,12 +417,6 @@ export const useSettlementStore = create<SettlementState>()(
         usePrefsStore.getState().setFees(normalized);
       },
 
-      setMode: (mode) => {
-        set((state) => ({ settlement: { ...state.settlement, mode } }));
-        // resetSession이 마지막에 고른 모드를 이어받도록 prefs에도 반영한다 (setFees와 같은 패턴)
-        usePrefsStore.getState().setMode(mode);
-      },
-
       resetSession: () => {
         const prefs = usePrefsStore.getState();
         // 손상 백업에는 이전 세션의 멤버 실명과 금액이 통째로 들어 있다. "새 정산" 은
@@ -410,36 +432,23 @@ export const useSettlementStore = create<SettlementState>()(
       partialize: (state) => ({ settlement: state.settlement }),
       migrate: (persistedState, version): { settlement: Settlement } => {
         try {
-          if (version === 1) {
-            // v1 -> v2: roundingUnit·defaultAnte·treasurerId 삭제, mode 채움(§5-A-3 결정 1).
-            // members/rounds/extras 등은 보존한다.
+          if (version === 1 || version === 2) {
             const wrapped = persistedState as { settlement?: Record<string, unknown> };
-            const v1 = wrapped.settlement;
+            const stored = wrapped.settlement;
             const looksLikeSettlement =
-              v1 &&
-              typeof v1 === 'object' &&
-              Array.isArray(v1.members) &&
-              Array.isArray(v1.rounds) &&
-              Array.isArray(v1.extras);
+              stored &&
+              typeof stored === 'object' &&
+              Array.isArray(stored.members) &&
+              Array.isArray(stored.rounds) &&
+              Array.isArray(stored.extras);
             if (!looksLikeSettlement) {
               backupCorruptState(persistedState, version);
               return { settlement: createEmptySettlement(usePrefsStore.getState()) };
             }
-            const {
-              roundingUnit: _roundingUnit,
-              defaultAnte: _defaultAnte,
-              treasurerId: _treasurerId,
-              ...rest
-            } = v1 as Record<string, unknown> & {
-              roundingUnit?: unknown;
-              defaultAnte?: unknown;
-              treasurerId?: unknown;
-            };
-            const migratedMode: SettlementMode =
-              v1!.mode === 'normal' || v1!.mode === 'bet' ? (v1!.mode as SettlementMode) : 'bet';
-            return {
-              settlement: { ...(rest as Omit<Settlement, 'version' | 'mode'>), version: CURRENT_VERSION, mode: migratedMode },
-            };
+            // v1은 v2를 거쳐 v3로 간다. 단계를 건너뛰면 v1에서만 존재하던 필드가
+            // 그대로 v3 상태에 얹혀 저장된다.
+            const v2 = version === 1 ? migrateV1toV2(stored) : stored;
+            return { settlement: migrateV2toV3(v2) };
           }
           // 그 외 알 수 없는 버전은 손상으로 취급해 백업 후 초기화한다 (기존 C3 동작 유지)
           backupCorruptState(persistedState, version);
@@ -457,3 +466,79 @@ export const useSettlementStore = create<SettlementState>()(
     }
   )
 );
+
+/**
+ * v1 -> v2: v2에서 삭제된 필드(`roundingUnit`/`defaultAnte`/`treasurerId`)만 떼어낸다.
+ *
+ * v2가 새로 넣었던 `mode`는 여기서 채우지 않는다 — 바로 다음 단계인 v3가 다시 지우기 때문이다.
+ * members/rounds/extras는 v1과 v2가 같은 모양이므로 손대지 않고 넘긴다.
+ */
+function migrateV1toV2(v1: Record<string, unknown>): Record<string, unknown> {
+  const {
+    roundingUnit: _roundingUnit,
+    defaultAnte: _defaultAnte,
+    treasurerId: _treasurerId,
+    ...rest
+  } = v1;
+  return rest;
+}
+
+/** v2 기타비용 한 항목. `amount` 하나를 `splitAmong` 대상에게 균등 분배하던 시절의 모양이다 */
+type V2Extra = {
+  id?: unknown;
+  label?: unknown;
+  amount?: unknown;
+  splitAmong?: unknown;
+};
+
+/**
+ * v2 기타비용 하나를 사람별 금액 맵으로 편다.
+ *
+ * 분담 대상은 `splitAmong === 'all'`이면 전 멤버, 배열이면 그중 **실제로 남아 있는 멤버**다
+ * (이미 삭제된 멤버 id가 남아 있을 수 있다). 대상이 하나도 없으면 빈 맵을 돌려준다.
+ *
+ * **알려진 한계**: 그 경우 v2가 들고 있던 금액은 얹을 키가 없어 사라지고, `calc.ts`의
+ * 미수금(unassignedExtras) 경고에도 잡히지 않는다(합계가 0이면 보고하지 않는다).
+ * v3 스키마에는 주인 없는 금액을 담을 자리가 없다 — 되살리려면 스키마 쪽 결정이 필요하다.
+ *
+ * 분배는 반드시 [[splitEvenly]]를 쓴다. 이 앱의 분배 규칙은 "전원이 같은 금액"이고
+ * (합계가 최대 인원-1원 커진다), 여기서만 다른 규칙을 쓰면 마이그레이션 전후로 청구액이 달라진다.
+ */
+function extraAmountsFromV2(extra: V2Extra, memberIds: string[]): Record<string, number> {
+  const targets =
+    extra.splitAmong === 'all'
+      ? memberIds
+      : Array.isArray(extra.splitAmong)
+        ? (extra.splitAmong as unknown[]).filter(
+            (id): id is string => typeof id === 'string' && memberIds.includes(id)
+          )
+        : [];
+  if (targets.length === 0) return {};
+
+  const shares = splitEvenly(toWon(extra.amount as number), targets.length);
+  const amounts: Record<string, number> = {};
+  targets.forEach((id, i) => {
+    amounts[id] = shares[i];
+  });
+  return normalizeAmounts(amounts);
+}
+
+/**
+ * v2 -> v3: `mode` 삭제 + 기타비용을 사람별 금액 맵으로 전환한다 (2026-08-24).
+ * members/rounds/요금 등 나머지는 전부 보존한다.
+ */
+function migrateV2toV3(v2: Record<string, unknown>): Settlement {
+  const { mode: _mode, ...rest } = v2;
+  const members = (rest.members ?? []) as Member[];
+  const memberIds = members.map((m) => m.id);
+  const extras = ((rest.extras ?? []) as V2Extra[]).map((e) => ({
+    id: typeof e.id === 'string' ? e.id : nanoid(),
+    label: typeof e.label === 'string' ? e.label : '',
+    amounts: extraAmountsFromV2(e, memberIds),
+  }));
+  return {
+    ...(rest as Omit<Settlement, 'version' | 'extras'>),
+    extras,
+    version: CURRENT_VERSION,
+  };
+}

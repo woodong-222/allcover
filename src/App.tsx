@@ -20,7 +20,6 @@ const CAPTURE_DEBOUNCE_MS = 400;
 export default function App() {
   const settlement = useSettlementStore((s) => s.settlement);
   const resetSession = useSettlementStore((s) => s.resetSession);
-  const setMode = useSettlementStore((s) => s.setMode);
 
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -132,40 +131,11 @@ export default function App() {
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <h1 className="text-lg font-bold text-slate-900">🎳 allcover</h1>
 
+          {/*
+            전역 정산/내기 토글은 제거됐다 (2026-08-24). 정산해야 하는 판과 그냥 치는 판이
+            한 자리에서 섞이므로, 구분은 판별로 RoundCard 의 "정산 방식" 세그먼트가 맡는다.
+          */}
           <div className="flex items-center gap-2">
-            {/*
-              모드는 판마다가 아니라 정산 전체에 걸리는 설정이라 헤더에 둔다.
-              전환은 비파괴적이다 — 정산 모드로 바꿔도 입력해둔 순위·배당은 지워지지 않고
-              계산에서만 빠진다. 잘못 눌렀을 때 되돌릴 수 없으면 안 되기 때문이다.
-            */}
-            <div
-              role="radiogroup"
-              aria-label="정산 방식"
-              className="flex rounded-lg border border-slate-300 p-0.5"
-            >
-              {(
-                [
-                  ['normal', '정산'],
-                  ['bet', '내기'],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  role="radio"
-                  aria-checked={settlement.mode === value}
-                  onClick={() => setMode(value)}
-                  className={`min-h-11 rounded-md px-4 text-sm font-medium ${
-                    settlement.mode === value
-                      ? 'bg-slate-900 text-white'
-                      : 'text-slate-700'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
             <button
               type="button"
               onClick={handleReset}

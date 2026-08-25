@@ -8,7 +8,6 @@ import type {
   Round,
   RoundBreakdown,
   Settlement,
-  SettlementMode,
 } from '../types';
 import { distributeWithRemainder, splitEvenly } from './money';
 
@@ -24,22 +23,14 @@ function zeroed(ids: string[]): Record<string, number> {
  * - `pot`: `delta = ante - payout[rankOf(m)]`, `imbalance = 배당합계 - 판돈합계`
  * - `transfer`: 진 쪽이 이긴 쪽 1인분(`amount`)을 나눠 부담
  * - `none` 및 계산 불가 엣지(참여자 0명 / 순위 0개 / losers 0명 또는 전원): 전원 0
- * - `mode === 'normal'`(정산 모드): 라운드에 내기 입력이 남아 있어도 전원 0, imbalance 0.
- *   `RoundCard` 가 자기 경고를 그리려고 이 함수를 직접 호출하므로 게이트가 여기 있어야 한다 (G5).
  *
- * **극성 주의**: 반드시 `mode === 'normal'` 로 판정한다. `mode === 'bet'` 로 뒤집으면
- * mode 가 undefined 인 구버전 저장값에서 내기 금액이 통째로 사라진다 (§5-A-3 결정 2, G8).
- * 기본값을 `'bet'` 으로 둔 것도 같은 이유다 — 인자가 없거나 undefined 면 내기 모드로 폴백한다.
+ * 전역 정산/내기 모드는 2026-08-24 에 제거됐다. 정산/내기는 판마다 다를 수 있으므로
+ * `method === 'none'` 하나가 "이 판은 정산만" 을 뜻한다.
  */
-export function roundDelta(
-  round: Round,
-  gameFeePerGame: number,
-  mode: SettlementMode = 'bet',
-): RoundBreakdown {
+export function roundDelta(round: Round, gameFeePerGame: number): RoundBreakdown {
   const participants = [...new Set(round.participants)];
   const delta = zeroed(participants);
   const noBet: RoundBreakdown = { roundId: round.id, delta, imbalance: 0, surplus: 0 };
-  if (mode === 'normal') return noBet; // 정산 모드: 라운드 데이터는 읽기만 하고 계산에서만 제외한다 (G1)
   if (participants.length === 0 || round.method === 'none') return noBet;
 
   const joined = new Set(participants);
@@ -101,9 +92,7 @@ export function calculate(settlement: Settlement): CalcResult {
     }
   }
 
-  const breakdowns = settlement.rounds.map((r) =>
-    roundDelta(r, settlement.gameFeePerGame, settlement.mode),
-  );
+  const breakdowns = settlement.rounds.map((r) => roundDelta(r, settlement.gameFeePerGame));
   const betDelta = zeroed(ids);
   for (const b of breakdowns) {
     for (const [id, d] of Object.entries(b.delta)) {
@@ -111,26 +100,24 @@ export function calculate(settlement: Settlement): CalcResult {
     }
   }
 
-  // 기타비용은 항목마다 분담 대상에게 **전원 같은 금액**으로 분배한다.
-  // 나누어떨어지지 않으면 1원씩 올려 걷으므로 항목 총액보다 조금 더 걷힌다 (roundingSurplus 참고).
+  // 기타비용은 사람별 금액을 그대로 더한다 (2026-08-24). 균등 분배는 입력 단계에서
+  // 같은 값을 채워 넣는 것으로 이미 끝나 있으므로, 여기서는 나눗셈을 하지 않는다.
+  // 즉 올림 초과분이 생길 여지가 없어 extras 는 roundingSurplus 에 기여하지 않는다.
   const extra = zeroed(ids);
-  let extraSurplus = 0;
   const unassignedExtras: { label: string; amount: number }[] = [];
   for (const item of settlement.extras) {
-    const sharers = (item.splitAmong === 'all' ? ids : item.splitAmong).filter((id) =>
-      known.has(id),
-    );
-    if (sharers.length === 0) {
-      // 분담 대상이 전원 삭제된 항목. 아무에게도 청구되지 않으므로 그 금액이 정산에서
-      // 조용히 증발한다. 계획서 R12 와 같은 뿌리이므로 같은 방식으로 드러낸다 (F3).
-      if (item.amount !== 0) unassignedExtras.push({ label: item.label, amount: item.amount });
-      continue;
+    let charged = 0;
+    for (const [id, amount] of Object.entries(item.amounts)) {
+      if (!known.has(id) || amount === 0) continue;
+      extra[id] += amount;
+      charged += amount;
     }
-    const shares = splitEvenly(item.amount, sharers.length);
-    sharers.forEach((id, i) => {
-      extra[id] += shares[i];
-    });
-    extraSurplus += shares.reduce((acc, s) => acc + s, 0) - item.amount;
+    if (charged === 0) {
+      // 낼 사람이 한 명도 안 남은 항목(멤버 삭제 등). 아무에게도 청구되지 않아 금액이
+      // 정산에서 조용히 증발하므로 드러낸다 (F3). 남아 있던 총액을 그대로 보고한다.
+      const orphaned = Object.values(item.amounts).reduce((a, b) => a + b, 0);
+      if (orphaned !== 0) unassignedExtras.push({ label: item.label, amount: orphaned });
+    }
   }
 
   const shoeRenters = new Set(settlement.shoeRenters);
@@ -169,7 +156,7 @@ export function calculate(settlement: Settlement): CalcResult {
      * 배당을 잘못 입력한 것만으로 "올림으로 더 걷힌 금액: -2,000원" 같은 거짓말이 나온다.
      * 그래서 역산을 버리고 `splitEvenly` 를 부른 지점에서 초과분을 직접 누적한다. (F2)
      */
-    roundingSurplus: extraSurplus + breakdowns.reduce((acc, b) => acc + b.surplus, 0),
+    roundingSurplus: breakdowns.reduce((acc, b) => acc + b.surplus, 0),
     unassignedExtras,
   };
 }

@@ -4,11 +4,8 @@ dist
 .DS_Store
 *.local
 
-# OMC operational artifacts (plans are kept intentionally)
-.omc/state/
-.omc/logs/
-.omc/artifacts/
-.omc/handoffs/
-.omc/notepad.md
-.omc/project-memory.json
-.omc/sessions/
+# AI 도구 산출물 (전부 추적하지 않는다)
+.omc/
+CLAUDE.md
+AGENTS.md
+.claude/

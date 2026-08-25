@@ -7,12 +7,22 @@
 
 export type Member = { id: string; name: string };
 
-/** 기타 비용. splitAmong 이 'all' 이면 전체 멤버 균등 분담. */
+/**
+ * 기타 비용. **금액을 사람별로 따로 담는다** (2026-08-24).
+ *
+ * 이전에는 `amount` 하나를 `splitAmong` 대상에게 균등 분배했는데, 그러면
+ * "가는 2,000원짜리 음료수, 나는 2,500원짜리" 를 표현할 수 없었다. 사람별 금액 맵이
+ * 균등 분배와 개별 금액을 **하나의 표현으로** 모두 담는다 — 균등 분배는 같은 값을
+ * 채워 넣은 특수한 경우일 뿐이다.
+ *
+ * 금액이 0이거나 키가 없는 멤버는 그 항목을 안 먹은 것이므로 청구되지 않는다.
+ * 따라서 "분담 대상 전원 삭제" 도 amounts 가 비는 것으로 자연스럽게 표현된다.
+ */
 export type Extra = {
   id: string;
   label: string;
-  amount: number;
-  splitAmong: string[] | 'all';
+  /** memberId -> 그 사람이 낼 금액(원). 정수만 담는다 */
+  amounts: Record<string, number>;
 };
 
 /**
@@ -51,19 +61,9 @@ export type Round = {
   transferAmount: number;
 };
 
-/**
- * 정산 전체에 걸리는 모드.
- * - `normal` : 정산 모드. 판은 참여 여부만 센다. 내기 UI 를 전부 숨기고 betDelta 를 0으로 만든다
- * - `bet`    : 내기 모드. 판마다 pot / transfer 를 지정한다
- *
- * **전환은 비파괴적이다.** `normal` 로 바꿔도 각 라운드의 method/ante/payout/ranking/losers/teams 를
- * 지우지 않고 계산에서만 제외한다. 잘못 눌렀을 때 순위·배당이 날아가면 복구할 방법이 없기 때문이다.
- *
- * **판정식 극성 주의**: 반드시 `mode === 'normal' ? 0 : delta` 로 쓴다.
- * `mode === 'bet' ? delta : 0` 으로 쓰면 mode 가 undefined 인 구버전 저장값에서
- * 내기 금액이 조용히 사라진다. 같은 로직의 두 표현인데 결과가 정반대다. (계획서 §5-A-3)
- */
-export type SettlementMode = 'normal' | 'bet';
+// 전역 SettlementMode 는 제거됐다 (2026-08-24). 정산/내기 구분은 판마다 다를 수 있으므로
+// Round.method 하나로 표현한다 — 'none' 이 정산, 'pot'/'transfer' 가 내기다.
+// 전역 토글과 판별 method 가 이중으로 존재하던 구조를 하나로 합친 것이다.
 
 export type Settlement = {
   version: number;
@@ -71,8 +71,6 @@ export type Settlement = {
   /** ISO 8601 date string */
   date: string;
   title?: string;
-
-  mode: SettlementMode;
 
   members: Member[];
   gameFeePerGame: number;
