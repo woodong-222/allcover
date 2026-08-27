@@ -25,7 +25,6 @@ function makeResult(memberId: string, overrides: Partial<MemberResult> = {}): Me
 
 function makeSettlement(overrides: Partial<Settlement> = {}): Settlement {
   return {
-    version: 1,
     id: 's1',
     date: '2026-08-21',
     members: makeMembers(3),

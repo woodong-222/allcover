@@ -56,7 +56,6 @@ export type Round = {
 };
 
 export type Settlement = {
-  version: number;
   id: string;
   /** ISO 8601 date string */
   date: string;

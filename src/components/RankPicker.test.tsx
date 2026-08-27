@@ -30,7 +30,6 @@ function makeRound(patch: Partial<Round> = {}): Round {
 
 function seed(round: Round): void {
   const settlement: Settlement = {
-    version: 1,
     id: 's1',
     date: '2026-08-21T00:00:00.000Z',
     members: MEMBERS,

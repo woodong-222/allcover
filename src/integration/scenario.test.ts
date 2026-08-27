@@ -10,7 +10,6 @@ import { initialPrefs, usePrefsStore } from '../store/usePrefsStore';
 import { calculate, roundDelta } from '../lib/calc';
 import type { MemberResult, Settlement } from '../types';
 
-const SESSION_KEY = 'allcover:session:v1';
 
 const store = () => useSettlementStore.getState();
 const current = (): Settlement => useSettlementStore.getState().settlement;
@@ -250,24 +249,14 @@ describe('통합 시나리오 (8명 / 5판)', () => {
     expect(results.every((r) => r.rounded > 0)).toBe(true);
   });
 
-  it('8. 영속성 왕복: localStorage 복원 후 calculate() 결과가 완전히 동일하다', async () => {
+  // 진행 중인 정산은 저장하지 않으므로 복원 왕복 자체가 없다. 대신 세션이
+  // localStorage 에 흔적을 남기지 않는지를 고정한다.
+  it('8. 정산 세션은 localStorage 에 저장되지 않는다', () => {
     buildScenario();
-    const before = calculate(current());
+    expect(current().rounds).toHaveLength(5);
 
-    const raw = window.localStorage.getItem(SESSION_KEY);
-    expect(raw).not.toBeNull();
-
-    // 세션을 날린 뒤 저장돼 있던 값을 다시 주입해 복원시킨다
-    store().resetSession();
-    expect(current().rounds).toEqual([]);
-    expect(calculate(current()).results).toEqual([]);
-
-    window.localStorage.setItem(SESSION_KEY, raw as string);
-    await useSettlementStore.persist.rehydrate();
-
-    const after = calculate(current());
-    expect(after).toEqual(before);
-    expect(JSON.stringify(after)).toBe(JSON.stringify(before));
+    const keys = Object.keys(window.localStorage);
+    expect(keys.filter((k) => k.startsWith('allcover:session'))).toEqual([]);
   });
 
   it('9. 멤버 삭제 후에도 크래시 없이 계산되고 댕글링 참조가 남지 않는다', () => {

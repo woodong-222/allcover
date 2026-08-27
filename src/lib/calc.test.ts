@@ -28,7 +28,6 @@ function mkRound(patch: Partial<Round> & { id: string; participants: string[] })
 
 function mkSettlement(patch: Partial<Settlement> & { members: Member[] }): Settlement {
   return {
-    version: 1,
     id: 's1',
     date: '2026-08-21',
     gameFeePerGame: 4000,

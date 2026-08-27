@@ -412,234 +412,66 @@ describe('영속성 — localStorage 라운드트립', () => {
     expect(p.shoeFee).toBe(2000);
   });
 
-  it('판 3개를 입력한 세션이 탭을 닫았다 열어도 전체 복원된다', async () => {
-    let snapshot: unknown;
+  // 진행 중인 정산은 저장하지 않는다. 새로고침하면 빈 화면에서 시작하고,
+  // 게임 단가·신발비·최근 멤버 이름만 prefs 가 이어받는다.
+  // 세션 저장을 없앤 뒤 실제로 났던 버그: 정산은 비워지는데 요금까지 0으로 시작했다.
+  // 프리셋은 남기기로 한 값이므로 첫 화면부터 채워져 있어야 한다.
+  it('새로고침해도 저장된 게임 단가·신발비가 첫 화면에 들어온다', async () => {
     {
-      const { useSettlementStore: store } = await import('./useSettlementStore');
-      store.getState().addMember('철수');
-      store.getState().addMember('영희');
-      store.getState().addRound();
-      store.getState().addRound();
-      store.getState().addRound();
-      const roundId = store.getState().settlement.rounds[0].id;
-      store.getState().setMethod(roundId, 'pot');
-      store.getState().setAnte(roundId, 1000);
-      snapshot = store.getState().settlement;
+      const { usePrefsStore: prefs } = await import('./usePrefsStore');
+      prefs.getState().setFees({ gameFeePerGame: 4500, shoeFee: 2000 });
     }
 
     vi.resetModules();
 
     const { useSettlementStore: reloaded } = await import('./useSettlementStore');
-    expect(reloaded.getState().settlement).toEqual(snapshot);
+    const s = reloaded.getState().settlement;
+    expect(s.gameFeePerGame).toBe(4500);
+    expect(s.shoeFee).toBe(2000);
+    // 정산 자체는 여전히 비어 있다
+    expect(s.members).toEqual([]);
+    expect(s.rounds).toEqual([]);
   });
 
-  it('파싱 불가능한 저장값은 백업 후 초기 상태로 복구되며 크래시하지 않는다', async () => {
-    window.localStorage.setItem('allcover:session:v1', '{ 이건 유효한 JSON이 아님 ]');
+  it('진행 중인 정산은 새로고침하면 남지 않는다', async () => {
+    {
+      const { useSettlementStore: store } = await import('./useSettlementStore');
+      store.getState().addMember('철수');
+      store.getState().addRound();
+      expect(store.getState().settlement.members).toHaveLength(1);
+      expect(store.getState().settlement.rounds).toHaveLength(1);
+    }
+
+    vi.resetModules();
 
     const { useSettlementStore: reloaded } = await import('./useSettlementStore');
     const s = reloaded.getState().settlement;
     expect(s.members).toEqual([]);
     expect(s.rounds).toEqual([]);
-
-    const backupKey = Object.keys(window.localStorage).find((k) => k.startsWith('allcover:corrupt:'));
-    expect(backupKey).toBeDefined();
-    expect(window.localStorage.getItem(backupKey!)).toContain('유효한 JSON이 아님');
+    expect(s.extras).toEqual([]);
   });
 
-  it('알 수 없는 버전의 저장값은 백업 후 초기 상태로 복구되며 크래시하지 않는다', async () => {
+  // 예전 버전이 저장해둔 세션 키에는 멤버 실명과 금액이 통째로 들어 있다.
+  // 이제 읽지 않는 값이라도 남겨두면 개인정보가 브라우저에 계속 머문다.
+  it('예전 버전이 남긴 세션 저장값을 지운다', async () => {
     window.localStorage.setItem(
       'allcover:session:v1',
-      JSON.stringify({ state: { settlement: { members: [{ id: 'x', name: '유령' }] } }, version: 999 })
+      JSON.stringify({ state: { settlement: { members: [{ id: 'm1', name: '철수' }] } }, version: 3 })
     );
 
-    const { useSettlementStore: reloaded } = await import('./useSettlementStore');
-    const s = reloaded.getState().settlement;
-    expect(s.members).toEqual([]);
+    await import('./useSettlementStore');
 
-    const backupKey = Object.keys(window.localStorage).find((k) => k.startsWith('allcover:corrupt:'));
-    expect(backupKey).toBeDefined();
+    expect(window.localStorage.getItem('allcover:session:v1')).toBeNull();
   });
 
-  it('v3: v2 저장값의 mode가 사라지고 extras가 amounts로 균등 분배되며 나머지는 전부 보존된다', async () => {
-    const v2Settlement = {
-      version: 2,
-      id: 'sett-2',
-      date: '2026-08-24T00:00:00.000Z',
-      mode: 'normal', // v3에서 삭제되어야 한다
-      members: [
-        { id: 'm1', name: '철수' },
-        { id: 'm2', name: '영희' },
-        { id: 'm3', name: '민수' },
-      ],
-      // 기본값(0)과 다른 값이어야 보존 검증이 공허해지지 않는다
-      gameFeePerGame: 4000,
-      shoeFee: 2000,
-      shoeRenters: ['m1', 'm3'],
-      rounds: [
-        {
-          id: 'r1',
-          participants: ['m1', 'm2', 'm3'],
-          teams: [['m1', 'm2'], ['m3']],
-          method: 'pot',
-          ante: 1000,
-          payout: [2000],
-          ranking: [['m1', 'm2']],
-          losers: [],
-          transferSource: 'custom',
-          transferAmount: 5000,
-        },
-        {
-          id: 'r2',
-          participants: ['m1', 'm2'],
-          teams: null,
-          method: 'transfer',
-          ante: 0,
-          payout: [],
-          ranking: [],
-          losers: ['m2'],
-          transferSource: 'gameFee',
-          transferAmount: 0,
-        },
-      ],
-      extras: [
-        // 'all' -> 전 멤버 3명에게 균등. 10,000 / 3 은 나누어떨어지지 않으므로
-        // splitEvenly 규칙(전원 동일 금액, 1원 올림)이 실제로 적용됐는지 숫자로 드러난다
-        { id: 'e1', label: '음료', amount: 10000, splitAmong: 'all' },
-        // 지정 배열 -> 그중 실제 멤버만. 6,000 / 2 = 3,000
-        { id: 'e2', label: '간식', amount: 6000, splitAmong: ['m1', 'm2'] },
-        // 이미 삭제된 멤버만 지정된 항목 -> 분담 대상 0명 -> 빈 맵
-        { id: 'e3', label: '유령', amount: 7000, splitAmong: ['gone'] },
-      ],
-    };
-    window.localStorage.setItem(
-      'allcover:session:v1',
-      JSON.stringify({ state: { settlement: v2Settlement }, version: 2 })
-    );
+  it('정산 세션은 localStorage 에 키를 만들지 않는다', async () => {
+    const { useSettlementStore: store } = await import('./useSettlementStore');
+    store.getState().addMember('철수');
+    store.getState().addRound();
 
-    const { useSettlementStore: reloaded } = await import('./useSettlementStore');
-    const s = reloaded.getState().settlement;
-
-    // 보존: members/rounds가 비면 마이그레이션이 아니라 초기화가 일어난 것이다
-    expect(s.members).toEqual(v2Settlement.members);
-    expect(s.rounds).toHaveLength(2);
-    expect(s.rounds).toEqual(v2Settlement.rounds);
-    expect(s.gameFeePerGame).toBe(4000);
-    expect(s.shoeFee).toBe(2000);
-    expect(s.shoeRenters).toEqual(['m1', 'm3']);
-    expect(s.id).toBe('sett-2');
-    expect(s.date).toBe('2026-08-24T00:00:00.000Z');
-
-    expect(s.version).toBe(3);
-    expect('mode' in s).toBe(false);
-
-    // extras 전환: amount/splitAmong은 사라지고 amounts만 남는다
-    expect(s.extras).toHaveLength(3);
-    for (const e of s.extras) {
-      expect('amount' in e).toBe(false);
-      expect('splitAmong' in e).toBe(false);
-    }
-    expect(s.extras[0]).toEqual({
-      id: 'e1',
-      label: '음료',
-      // 10,000원을 3명이 나누면 전원 3,334원 (합계 10,002원, splitEvenly의 의도된 초과분)
-      amounts: { m1: 3334, m2: 3334, m3: 3334 },
-    });
-    expect(s.extras[1].amounts).toEqual({ m1: 3000, m2: 3000 });
-    expect(s.extras[2].amounts).toEqual({});
-
-    // 전환된 값이 실제 계산에 그대로 먹히는지 교차 검증 (calc.ts)
-    const { calculate: calc } = await import('../lib/calc');
-    const { results, unassignedExtras } = calc(s);
-    const extraOf = (id: string) => results.find((r) => r.memberId === id)!.extra;
-    expect(extraOf('m1')).toBe(3334 + 3000);
-    expect(extraOf('m2')).toBe(3334 + 3000);
-    expect(extraOf('m3')).toBe(3334);
-    // 알려진 한계: 분담 대상이 한 명도 없던 v2 항목은 금액을 얹을 키가 없어 amounts가 비고,
-    // calc의 미수금 경고(합계 0이면 보고하지 않음)에도 잡히지 않는다. v3 스키마에는
-    // "주인 없는 금액"을 담을 자리가 없다. 아래 단언은 그 사실을 못박아 둔 것이지
-    // 바람직한 동작을 승인한 것이 아니다.
-    expect(unassignedExtras).toEqual([]);
-
-    // 이건 정상 마이그레이션이지 손상이 아니므로 손상 백업이 생기면 안 된다
-    const backupKey = Object.keys(window.localStorage).find((k) => k.startsWith('allcover:corrupt:'));
-    expect(backupKey).toBeUndefined();
-  });
-
-  it('v3: v1 저장값도 v1 -> v2 -> v3로 연쇄되어 members/rounds와 extras 전환까지 끝난다', async () => {
-    const v1Settlement = {
-      version: 1,
-      id: 'sett-1',
-      date: '2026-08-21T00:00:00.000Z',
-      members: [
-        { id: 'm1', name: '철수' },
-        { id: 'm2', name: '영희' },
-      ],
-      gameFeePerGame: 4000,
-      shoeFee: 2000,
-      shoeRenters: ['m1'],
-      defaultAnte: 1000, // v1 전용 필드
-      rounds: [
-        {
-          id: 'r1',
-          participants: ['m1', 'm2'],
-          teams: null,
-          method: 'pot',
-          ante: 1000,
-          payout: [2000],
-          ranking: [['m1']],
-          losers: [],
-          transferSource: 'gameFee',
-          transferAmount: 0,
-        },
-      ],
-      extras: [{ id: 'e1', label: '음료', amount: 3000, splitAmong: 'all' }],
-      treasurerId: 'm1', // v1 전용 필드
-      roundingUnit: 100, // v1 전용 필드
-    };
-    window.localStorage.setItem(
-      'allcover:session:v1',
-      JSON.stringify({ state: { settlement: v1Settlement }, version: 1 })
-    );
-
-    const { useSettlementStore: reloaded } = await import('./useSettlementStore');
-    const s = reloaded.getState().settlement;
-
-    // members가 빈 배열이 되면 실패다 — 마이그레이션이 아니라 초기화가 일어난 것이다
-    expect(s.members).toEqual(v1Settlement.members);
-    expect(s.rounds).toEqual(v1Settlement.rounds);
-    expect(s.gameFeePerGame).toBe(4000);
-    expect(s.shoeFee).toBe(2000);
-    expect(s.shoeRenters).toEqual(['m1']);
-
-    expect(s.version).toBe(3);
-    expect('mode' in s).toBe(false); // v2가 넣었다가 v3가 지운 필드
-    expect('roundingUnit' in s).toBe(false); // v1 전용 필드 (v1 -> v2 단계에서 삭제)
-    expect('defaultAnte' in s).toBe(false);
-    expect('treasurerId' in s).toBe(false);
-
-    // v1 -> v3까지 extras 전환도 끝나 있어야 한다. 3,000원을 2명이 나눠 각 1,500원
-    expect(s.extras).toEqual([{ id: 'e1', label: '음료', amounts: { m1: 1500, m2: 1500 } }]);
-
-    const backupKey = Object.keys(window.localStorage).find((k) => k.startsWith('allcover:corrupt:'));
-    expect(backupKey).toBeUndefined();
-  });
-
-  it('버전이 1/2/3 어느 것도 아니면(알 수 없는 버전) 여전히 백업 후 초기화된다', async () => {
-    window.localStorage.setItem(
-      'allcover:session:v1',
-      JSON.stringify({
-        state: { settlement: { members: [{ id: 'x', name: '유령' }], rounds: [], extras: [] } },
-        version: 999,
-      })
-    );
-
-    const { useSettlementStore: reloaded } = await import('./useSettlementStore');
-    const s = reloaded.getState().settlement;
-    // 알 수 없는 버전은 마이그레이션 대상이 아니다 — members가 보존되면 안 된다
-    expect(s.members).toEqual([]);
-
-    const backupKey = Object.keys(window.localStorage).find((k) => k.startsWith('allcover:corrupt:'));
-    expect(backupKey).toBeDefined();
+    const keys = Object.keys(window.localStorage);
+    expect(keys).not.toContain('allcover:session:v1');
+    expect(keys.filter((k) => k.startsWith('allcover:session'))).toEqual([]);
   });
 
   it('prefs v1 -> v3: roundingUnit·defaultAnte가 사라지고 요금/최근 이름은 보존된다', async () => {
@@ -696,23 +528,6 @@ describe('영속성 — localStorage 라운드트립', () => {
     expect(backupKey).toBeUndefined();
   });
 
-  it('버전은 일치하지만 state 모양이 깨진 저장값도 백업 후 초기화되며 크래시하지 않는다', async () => {
-    // version이 CURRENT_VERSION과 같으면 zustand persist는 migrate를 호출하지 않고
-    // state를 그대로 쓴다. settlement가 null이면 calc.ts가 렌더 중 TypeError로 죽는다.
-    window.localStorage.setItem(
-      'allcover:session:v1',
-      JSON.stringify({ state: { settlement: null }, version: 3 })
-    );
-
-    const { useSettlementStore: reloaded } = await import('./useSettlementStore');
-    expect(() => reloaded.getState()).not.toThrow();
-    const s = reloaded.getState().settlement;
-    expect(s.members).toEqual([]);
-    expect(s.rounds).toEqual([]);
-
-    const backupKey = Object.keys(window.localStorage).find((k) => k.startsWith('allcover:corrupt:'));
-    expect(backupKey).toBeDefined();
-  });
 
   it('prefs도 버전 일치 + 모양이 깨진 값이면 백업 후 초기화된다', async () => {
     window.localStorage.setItem(
