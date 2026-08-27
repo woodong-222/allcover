@@ -1,6 +1,5 @@
 /**
- * 통합 시나리오 테스트 — 계획서 §6-5의 수동 E2E 시나리오를 자동화한다.
- * 계획서: .omc/plans/2026-08-21-allcover-bowling-settlement.md §6-5
+ * 통합 시나리오 테스트.
  *
  * 목적: store 액션 → calc 를 관통하는 검증. 상태는 반드시 스토어 액션으로만 만든다.
  * 이 파일은 검증만 하며 lib/store 구현은 건드리지 않는다.
@@ -24,9 +23,9 @@ function resultOf(results: MemberResult[], memberId: string): MemberResult {
 }
 
 /**
- * 계획서 §6-5 시나리오를 스토어 액션만으로 구성한다.
+ * 8명이 5판 치는 시나리오를 스토어 액션만으로 구성한다.
  *
- * 멤버 8명 / 게임단가 4,000 / 신발비 2,000(3명) / 반올림 100원
+ * 멤버 8명 / 게임단가 4,000 / 신발비 2,000(3명)
  * 1판 개인전 pot(1등 4,000·2등 4,000) — 2판 개인전 pot 승자독식 —
  * 3판 4:4 팀전 transfer(판비 연동) — 4판 4팀×2명 pot — 5판 4명만 참여 none
  */
@@ -97,8 +96,8 @@ beforeEach(() => {
   store().resetSession();
 });
 
-describe('통합 시나리오 — 계획서 §6-5 (8명 / 5판)', () => {
-  it('시나리오가 스토어 액션만으로 계획서대로 구성된다 (셋업 자체 검증)', () => {
+describe('통합 시나리오 (8명 / 5판)', () => {
+  it('시나리오가 스토어 액션만으로 의도대로 구성된다 (셋업 자체 검증)', () => {
     const { ids, m0, m4 } = buildScenario();
     const s = current();
 
@@ -230,8 +229,7 @@ describe('통합 시나리오 — 계획서 §6-5 (8명 / 5판)', () => {
     }
   });
 
-  // 총무 지정과 송금 목록(settle.ts / TransferList)은 2026-08-21 에 제거됐다.
-  // 그 검증이 빠진 자리를 총액 정합성이 대신한다 — 송금이 없어진 지금은 이게 유일한 방어선이다.
+  // 금액이 어디서도 새지 않는지 보는 마지막 방어선이다.
   it('6. 총액 정합성: Σ rounded === Σ subtotal 이고 모든 금액이 정수다', () => {
     buildScenario();
     const { results } = calculate(current());
@@ -324,7 +322,7 @@ describe('통합 시나리오 — 계획서 §6-5 (8명 / 5판)', () => {
     expect(sum(results.map((r) => r.betDelta))).toBe(-2998);
     expect(results.every((r) => Number.isInteger(r.betDelta))).toBe(true);
 
-    // 총액도 그만큼 어긋난다 — UI가 경고 배지를 띄워야 하는 상태다 (계획서 R4).
+    // 총액도 그만큼 어긋난다 — 화면이 경고 배지를 띄워야 하는 상태다.
     const base = sum(results.map((r) => r.gameFee + r.shoe + r.extra));
     expect(sum(results.map((r) => r.subtotal))).toBe(base - totalImbalance + transferSurplus);
   });

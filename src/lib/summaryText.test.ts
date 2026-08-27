@@ -49,7 +49,7 @@ describe('buildSummaryText', () => {
     expect(emojiCount).toBe(1);
   });
 
-  it('총무/송금 안내 줄이 없다 (2026-08-21 제거됨)', () => {
+  it('총무/송금 안내 줄이 없다', () => {
     const text = buildSummaryText({
       date: '2026-08-21',
       memberNames: { m1: '김철수' },
@@ -62,7 +62,7 @@ describe('buildSummaryText', () => {
   });
 });
 
-describe('buildSummaryText — 경고 줄 (N3)', () => {
+describe('buildSummaryText — 경고 줄', () => {
   const base = {
     date: '2026-08-21',
     memberNames: { m1: '가', m2: '나' },

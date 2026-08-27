@@ -1,6 +1,5 @@
 /**
  * 판 목록 + 판 추가 버튼.
- * 계획서: .omc/plans/2026-08-21-allcover-bowling-settlement.md §4 M3
  *
  * 판 번호는 1부터 매기고, 새 판은 스토어의 addRound가 직전 판 구성(참여자·팀·방식·판돈)을 상속한다.
  */

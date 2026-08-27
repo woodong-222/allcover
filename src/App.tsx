@@ -25,7 +25,7 @@ export default function App() {
 
   /**
    * 캡처 결과를 state 가 아니라 ref 로도 들고 있는다.
-   * 공유 버튼 클릭 핸들러는 await 없이 즉시 shareImage 를 호출해야 하는데(R2),
+   * 공유 버튼 클릭 핸들러는 await 없이 즉시 shareImage 를 호출해야 하는데,
    * 그러려면 렌더 시점의 state 클로저가 아니라 항상 최신 blob 을 봐야 한다.
    */
   const blobRef = useRef<Blob | null>(null);
@@ -34,8 +34,7 @@ export default function App() {
 
   /**
    * 마운트 시 한 번만 판정하면 안 된다. 사파리 프라이빗 모드는 처음부터 막혀 있어 잡히지만
-   * **quota 초과는 세션 중간에 발생**하므로, 그때 배너가 뜨지 않으면 사용자는 조용히
-   * 데이터를 잃는다 (인수조건 C4).
+   * quota 초과는 세션 중간에 터지므로, 그때 배너가 안 뜨면 사용자는 조용히 데이터를 잃는다.
    */
   const persistenceOk = useSyncExternalStore(
     subscribePersistence,
@@ -54,7 +53,7 @@ export default function App() {
   const hasMembers = settlement.members.length > 0;
 
   /**
-   * 결과가 바뀔 때마다 PNG 를 미리 만들어 둔다 (D1).
+   * 결과가 바뀔 때마다 PNG 를 미리 만들어 둔다.
    * 클릭 시점에 캡처를 시작하면 iOS Safari 가 user activation 을 잃어 공유 시트가 안 뜬다.
    */
   useEffect(() => {
@@ -92,7 +91,7 @@ export default function App() {
 
   const filename = useMemo(() => todayFilename('allcover'), []);
 
-  // await 없이 즉시 shareImage 를 호출한다. 여기에 await 를 넣으면 iOS 에서 공유가 죽는다 (R2).
+  // await 없이 즉시 호출한다. 여기에 await 를 하나라도 넣으면 iOS 에서 공유 시트가 안 뜬다.
   const handleShare = useCallback(() => {
     const blob = blobRef.current;
     if (!blob) return;
@@ -131,10 +130,6 @@ export default function App() {
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <h1 className="text-lg font-bold text-slate-900">🎳 allcover</h1>
 
-          {/*
-            전역 정산/내기 토글은 제거됐다 (2026-08-24). 정산해야 하는 판과 그냥 치는 판이
-            한 자리에서 섞이므로, 구분은 판별로 RoundCard 의 "정산 방식" 세그먼트가 맡는다.
-          */}
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -172,7 +167,7 @@ export default function App() {
                 ready={captureReady}
                 outcome={outcome}
               />
-              {/* 카드는 캡처 일관성을 위해 540px 고정이라 좁은 화면에서는 카드 자체가 가로 스크롤된다 (E1) */}
+              {/* 카드는 캡처 일관성 때문에 폭이 고정이라, 좁은 화면에서는 카드만 가로로 스크롤된다 */}
               <div className="overflow-x-auto">
                 <ResultCard
                   ref={cardRef}

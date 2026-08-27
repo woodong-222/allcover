@@ -1,6 +1,5 @@
 /**
  * zustand persist용 손상 데이터 방어 계층.
- * 계획서: .omc/plans/2026-08-21-allcover-bowling-settlement.md §3 인수조건 C3
  *
  * - JSON 파싱 실패, 또는 `{ state, version }` 봉투 형태가 아닌 값은
  *   원본 그대로 `allcover:corrupt:{ts}` 키에 백업한 뒤 null을 돌려줘 초기 상태로 복구시킨다.
@@ -16,9 +15,8 @@ const CORRUPT_PREFIX = 'allcover:corrupt:';
 /**
  * 지금까지 쌓인 손상 백업을 모두 지운다.
  *
- * 백업에는 세션 JSON 전체 — 즉 **멤버 실명과 금액** — 이 들어간다. 정리하지 않으면
- * 사용자가 "새 정산"으로 데이터를 지웠다고 믿어도 이름이 무기한 남고 quota 도 잠식한다
- * (2026-08-21 보안 검토 LOW).
+ * 백업에는 세션 JSON 전체 — 즉 멤버 실명과 금액 — 이 들어간다. 정리하지 않으면 사용자가
+ * "새 정산"으로 데이터를 지웠다고 믿어도 이름이 무기한 남고 quota 도 잠식한다.
  */
 export function clearCorruptBackups(): void {
   try {
@@ -36,8 +34,8 @@ export function clearCorruptBackups(): void {
 /**
  * 손상된 원본 문자열을 그대로 백업한다.
  *
- * 새 백업을 쓰기 전에 기존 백업을 지워 **항상 최신 1건만** 남긴다. 진단에는 가장 최근
- * 손상본이면 충분하고, 과거 백업을 계속 들고 있으면 개인정보만 오래 남는다.
+ * 새 백업을 쓰기 전에 기존 백업을 지워 항상 최신 1건만 남긴다. 진단에는 가장 최근 손상본이면
+ * 충분하고, 과거 백업을 계속 들고 있으면 개인정보만 오래 남는다.
  */
 export function backupCorruptRaw(raw: string): void {
   try {
@@ -70,10 +68,10 @@ function isValidEnvelope(value: unknown): value is { version: number; state: unk
  * `isValidState`는 각 스토어가 자신의 `state` 모양을 아는 유일한 쪽이므로 선택적으로 받는다.
  * 버전이 현재 버전과 같으면 zustand persist는 `migrate`를 아예 호출하지 않고 이 state를
  * 그대로 쓰기 때문에, 형태 검증을 여기서 하지 않으면 `{settlement:null}` 같은 값이 그대로
- * 스토어에 들어가 렌더 중 TypeError로 이어질 수 있다 (C3가 막으려는 크래시).
+ * 스토어에 들어가 렌더 중 TypeError로 이어질 수 있다.
  *
- * **저장된 버전을 함께 넘긴다**: 이 검사는 옛 버전 값에도 걸리는데, 옛 스키마는 당연히
- * 현재 모양이 아니다. 버전을 안 주면 스토어가 "현재 스키마 기준"으로 검사하다가 정상적인
+ * 저장된 버전을 함께 넘기는 이유: 이 검사는 옛 버전 값에도 걸리는데, 옛 스키마는 당연히
+ * 현재 모양이 아니다. 버전을 안 주면 스토어가 현재 스키마 기준으로 검사하다가 정상적인
  * 마이그레이션 대상을 손상으로 오인해 백업 후 초기화한다 — 진행 중인 정산이 날아간다.
  */
 export function createGuardedStorage<T>(

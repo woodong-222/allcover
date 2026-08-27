@@ -21,7 +21,7 @@ describe('storage', () => {
     expect(safeGet('k')).toBeNull();
   });
 
-  it('C4: localStorage.setItem이 throw해도 safeSet은 예외를 던지지 않고 false를 반환한다', () => {
+  it('localStorage.setItem이 throw해도 safeSet은 예외를 던지지 않고 false를 반환한다', () => {
     const spy = vi.spyOn(window.localStorage.__proto__, 'setItem').mockImplementation(() => {
       throw new DOMException('QuotaExceededError');
     });
@@ -30,7 +30,7 @@ describe('storage', () => {
     spy.mockRestore();
   });
 
-  it('C4: localStorage.getItem이 throw해도 safeGet은 예외를 던지지 않고 in-memory 폴백을 사용한다', () => {
+  it('localStorage.getItem이 throw해도 safeGet은 예외를 던지지 않고 in-memory 폴백을 사용한다', () => {
     const setSpy = vi.spyOn(window.localStorage.__proto__, 'setItem').mockImplementation(() => {
       throw new DOMException('SecurityError');
     });
@@ -47,7 +47,7 @@ describe('storage', () => {
     setSpy.mockRestore();
   });
 
-  it('C4: localStorage 접근이 throw하는 환경에서 isPersistenceAvailable()은 false를 반환한다', () => {
+  it('localStorage 접근이 throw하는 환경에서 isPersistenceAvailable()은 false를 반환한다', () => {
     const setSpy = vi.spyOn(window.localStorage.__proto__, 'setItem').mockImplementation(() => {
       throw new DOMException('SecurityError');
     });

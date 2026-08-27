@@ -1,6 +1,5 @@
 /**
  * 등수별 인당 배당액 편집기.
- * 계획서: .omc/plans/2026-08-21-allcover-bowling-settlement.md §2 "배당 입력 규칙", R4, 인수조건 A6
  *
  * pot = ante × 참여인원, 배당합 = Σ payout[r] × rankGroup[r].length.
  * 둘의 차이(= 남은 판돈)를 실시간으로 보여주고, 0이 아니면 색으로 경고한다. 숨기지 않는다.
@@ -22,24 +21,24 @@ export type PayoutEditorProps = {
 
 /**
  * 남은 판돈을 배당 배열에 흡수시켜 imbalance를 0으로 만든다.
- * **결과 payout은 항상 정수(원 단위)다.** 소수 배당은 결과 카드·공유 이미지를 오염시키고,
- * NumberField가 소수점을 제거해 금액이 100배로 튀는 버그를 만든다. 생성 지점에서 막는다.
+ * 결과 payout은 항상 정수(원 단위)다. 소수 배당은 결과 카드·공유 이미지를 오염시키고,
+ * NumberField가 소수점을 제거해 금액이 100배로 튀게 만든다. 생성 지점에서 막는다.
  *
  * 1. 배당이 판돈을 넘었으면 마지막 등수부터 인당 배당을 0원으로 비워 초과분을 걷어낸다.
  *    (1등 그룹은 비우지 않는다. 음수 배당을 만들지 않기 위한 단계)
  * 2. 마지막 등수 그룹에 인당 100원 단위로 담는다.
  * 3. 잔액이 인원수로 딱 나뉘는 등수를 뒤에서부터 찾아 통째로 얹는다.
  * 4. 한 등수로 안 되면 두 등수의 인당 배당을 함께 조정해 정수로 정확히 맞춘다.
- *    (뒤 등수를 먼저 움직이고 1등 그룹으로 상쇄하는 순서 — 계획서 §2 배분 규칙과 같은 방향)
- * 5. 등수 그룹 인원수의 최대공약수가 잔액을 나누지 못하면 정수 해가 **존재하지 않는다.**
+ *    (뒤 등수를 먼저 움직이고 1등 그룹으로 상쇄한다)
+ * 5. 등수 그룹 인원수의 최대공약수가 잔액을 나누지 못하면 정수 해가 존재하지 않는다.
  *    예: 등수 그룹이 7명 하나뿐이고 판돈이 900원 → 900 % 7 === 4 이라 7·p = 900 인 정수 p가 없다.
- *    이때는 최대한 담고 잔액을 남긴다. imbalance가 작은 **정수**로 남아 경고가 진실해진다
+ *    이때는 최대한 담고 잔액을 남긴다. imbalance가 작은 정수로 남아 경고가 진실해진다
  *    (소수로 억지로 맞추면 1.1e-13 같은 값이 남아 "0원 어긋남"이라는 무의미한 경고가 뜬다).
  *
  * 1~4를 탄 경우 결과 배당합은 pot과 정확히 같다.
  */
 export function distributeRemainder(payout: number[], sizes: number[], pot: number): number[] {
-  // 예전에 저장된 소수 배당이 섞여 들어와도 여기서 정수로 정규화한다.
+  // 저장된 값에 소수 배당이 섞여 들어와도 여기서 정수로 정규화한다.
   const next = sizes.map((_, i) => Math.round(payout[i] ?? 0));
   const paid = sizes.map((n, i) => (n > 0 ? i : -1)).filter((i) => i >= 0);
   if (paid.length === 0) return next;
@@ -80,10 +79,10 @@ export function distributeRemainder(payout: number[], sizes: number[], pot: numb
 
   // 4) 두 등수를 함께 조정한다. (뒤 등수, 1등) 쌍부터 시도한다.
   //
-  // ★ 탐색 반복 횟수에 상한을 둔다 (2026-08-21 보안 검토 MEDIUM).
+  // 탐색 반복 횟수에는 반드시 상한이 있어야 한다.
   // window 는 `remaining` 에 선형 비례하는데 `remaining` 은 사용자가 입력한 배당액에서 온다.
   // 상한이 없으면 배당액 10억 입력 시 7.5억 회를 돌아 메인 스레드가 10초 넘게 멈춘다.
-  // 게다가 이 함수는 PayoutEditor 가 **매 렌더마다** 부르고 payout 은 localStorage 에
+  // 게다가 이 함수는 PayoutEditor 가 매 렌더마다 부르고 payout 은 localStorage 에
   // 저장되므로, 새로고침해도 같은 값으로 다시 멈춰 앱이 영구적으로 못 쓰게 된다.
   // 상한을 넘으면 포기하고 5) 로 떨어진다 — 5) 는 이미 "정수 해 없음" 을 정상 처리한다.
   let budget = 200_000;
@@ -127,7 +126,7 @@ export function PayoutEditor({ round }: PayoutEditorProps) {
   const paidRanks = sizes.map((n, i) => (n > 0 ? i : -1)).filter((i) => i >= 0);
 
   // 자동 분배 결과를 미리 계산해 두고, 실제로 바뀌는 게 있을 때만 버튼을 살린다.
-  // 정수 해가 없는 판(§5 경로)에서 눌러도 아무 변화가 없는 버튼이 활성인 걸 막는다.
+  // 정수 해가 없는 판에서 눌러도 아무 변화가 없는 버튼이 활성인 걸 막는다.
   const autoDistributed = distributeRemainder(round.payout, sizes, pot);
   const canAutoDistribute = autoDistributed.some((p, i) => p !== (round.payout[i] ?? 0));
 

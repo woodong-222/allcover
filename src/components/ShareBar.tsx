@@ -1,16 +1,14 @@
 /**
  * 공유 / 이미지 저장 / 텍스트 복사 액션 바.
- * 계획서: .omc/plans/2026-08-21-allcover-bowling-settlement.md §3 인수조건 D1~D4, E2
  *
  * 이 컴포넌트는 순수 프레젠테이션이다. 실제 shareImage/downloadBlob/copyText 호출과
  * 상태(캡처 blob, 진행 결과) 관리는 부모가 갖고, 이 컴포넌트는 onShare/onDownload/onCopyText
- * 콜백과 ready/outcome 상태만 props로 받는다 — 결합도를 낮추고 부모 쪽에서 자유롭게
- * 재사용/테스트할 수 있게 하기 위함이다.
+ * 콜백과 ready/outcome 상태만 props로 받는다.
  *
- * D1/R2: onShare 는 버튼 onClick 안에서 **동기적으로** 호출해야 한다. 부모가 onShare 안에서
- * await 없이 곧바로 shareImage(blob, ...)를 시작해야 iOS Safari의 user-activation(사용자
- * 제스처)이 첫 await 지점(navigator.share)까지 유지된다. 이 컴포넌트는 onShare 를 감싸는
- * 어떤 프라미스 체인도 만들지 않는다 — 그냥 그대로 호출한다.
+ * onShare 는 버튼 onClick 안에서 동기적으로 호출해야 한다. 부모가 onShare 안에서 await 없이
+ * 곧바로 shareImage(blob, ...)를 시작해야 iOS Safari의 user-activation(사용자 제스처)이
+ * 첫 await 지점(navigator.share)까지 유지된다. 이 컴포넌트는 onShare 를 감싸는 어떤 프라미스
+ * 체인도 만들지 않는다 — 그냥 그대로 호출한다.
  */
 
 import type { ShareOutcome } from '../lib/share';
@@ -27,7 +25,7 @@ export type ShareBarProps = {
 
 const HIT_AREA = 'min-h-[44px] min-w-[44px]';
 
-/** outcome -> 사용자에게 보여줄 문구. cancelled/undefined는 null (D4: 취소는 에러가 아니다) */
+/** outcome -> 사용자에게 보여줄 문구. cancelled/undefined는 null — 취소는 에러가 아니다 */
 function outcomeMessage(outcome: ShareOutcome | undefined): string | null {
   switch (outcome) {
     case 'shared':

@@ -1,9 +1,8 @@
 /**
  * 한 판(Round)의 입력 카드. 참여자 · 정산/내기 구분 · 팀 편성 · 내기 방식과 그 하위 입력을 모두 담는다.
- * 계획서: .omc/plans/2026-08-21-allcover-bowling-settlement.md §2, §4 M3, R4, 인수조건 E1/E2
  *
- * 정산 방식은 2단 세그먼트다 (2026-08-24). 전역 모드 토글을 없애고 판별로 정산/내기를 고른다 —
- * 1단 `정산 / 내기`, 내기를 고른 판에서만 2단 `판돈 분배 / 판비 내주기` 가 붙는다.
+ * 정산 방식은 2단 세그먼트다. 판마다 정산/내기를 고르고 — 1단 `정산 / 내기`, 내기를 고른
+ * 판에서만 2단 `판돈 분배 / 판비 내주기` 가 붙는다.
  * 두 단은 `Round.method` 하나로 표현된다: 'none' 이 정산, 'pot'/'transfer' 가 내기다.
  *
  * round 는 부모(RoundList)가 스토어에서 읽어 내려주고, 액션과 나머지 정산 정보는 여기서 직접 읽는다.
@@ -41,8 +40,8 @@ function chipClass(active: boolean): string {
 
 /**
  * 세그먼트 버튼. `flex-1` 로 한 줄을 나눠 갖되 `min-w-[44px]` 때문에 그 아래로는 줄지 않는다 —
- * 320px 폭에서 두 줄로 감싸질지언정 히트 영역이 깎이거나 가로 스크롤이 생기지 않는다 (E1/E2).
- * 클래스는 컨테이너가 아니라 **실제 클릭 대상인 button** 에 붙는다.
+ * 320px 폭에서 두 줄로 감싸질지언정 히트 영역이 깎이거나 가로 스크롤이 생기지 않는다.
+ * 클래스는 컨테이너가 아니라 실제 클릭 대상인 button 에 붙는다.
  */
 function segClass(active: boolean): string {
   return `${HIT_AREA} flex-1 rounded-lg border px-3 py-2 text-sm font-medium ${
@@ -73,14 +72,14 @@ export function RoundCard({ round, index }: RoundCardProps) {
   /**
    * "내기" 로 되돌아왔을 때 직전에 고른 하위 방식을 복원하기 위한 기억.
    * 스토어의 `method` 는 정산을 고르는 순간 'none' 이 되어 pot/transfer 구분을 잃으므로,
-   * 그 구분만 여기 화면 상태로 들고 있는다. 금액·순위 같은 **데이터는 스토어가 그대로 보존**한다.
+   * 그 구분만 여기 화면 상태로 들고 있는다. 금액·순위 같은 데이터는 스토어가 그대로 보존한다.
    */
   const [lastBetMethod, setLastBetMethod] = useState<ActiveBetMethod>(
     round.method === 'none' ? 'pot' : round.method,
   );
 
-  // 정산 판(method === 'none')에서는 내기 UI를 통째로 숨긴다 (G3). 라운드 데이터는 지우지 않고
-  // 렌더만 건너뛴다 — 잘못 눌렀을 때 순위·배당이 날아가면 복구할 방법이 없기 때문이다 (§5-A-2).
+  // 정산 판(method === 'none')에서는 내기 UI를 통째로 숨긴다. 라운드 데이터는 지우지 않고
+  // 렌더만 건너뛴다 — 잘못 눌렀을 때 순위·배당이 날아가면 복구할 방법이 없기 때문이다.
   const showBetUI = round.method !== 'none';
   const { imbalance } = roundDelta(round, gameFeePerGame);
 

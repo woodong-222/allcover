@@ -4,12 +4,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { NumberField } from './NumberField';
 
 describe('NumberField', () => {
-  it('E3: inputMode="numeric"을 갖는다', () => {
+  it('inputMode="numeric"을 갖는다', () => {
     render(<NumberField label="게임 단가" value={0} onChange={() => {}} />);
     expect(screen.getByLabelText('게임 단가')).toHaveAttribute('inputMode', 'numeric');
   });
 
-  it('label과 htmlFor로 연결되어 접근 가능하다 (E4 전제조건, 실제 Tab 순회 검증은 a11y.test.tsx)', () => {
+  it('label과 htmlFor로 연결되어 접근 가능하다 (실제 Tab 순회 검증은 a11y.test.tsx)', () => {
     render(<NumberField label="신발비" value={0} onChange={() => {}} />);
     expect(screen.getByLabelText('신발비')).toBeInTheDocument();
   });
@@ -55,7 +55,7 @@ describe('NumberField', () => {
     expect(screen.getByText('원')).toBeInTheDocument();
   });
 
-  it('reviewer finding #3: 소수 value(payout 프리셋 등)를 받으면 정수로 표시하고, 한 글자만 입력해도 금액이 1,000배로 튀지 않는다', async () => {
+  it('소수 value(payout 프리셋 등)를 받으면 정수로 표시하고, 한 글자만 입력해도 금액이 1,000배로 튀지 않는다', async () => {
     const onChange = vi.fn();
     const user = userEvent.setup();
     // PayoutEditor 승자독식 프리셋이 실제로 만들어내는 소수값 (7명 3팀, ante 1,000 사례).
@@ -68,14 +68,14 @@ describe('NumberField', () => {
     await user.type(input, '5');
 
     const lastValue = onChange.mock.calls.at(-1)?.[0] as number;
-    // 버그가 있었다면 "2333.333" 문자열에서 소수점이 지워져 2,333,335 근처(약 1,000배)로 튀었다.
+    // 정규화하지 않으면 "2333.333" 문자열에서 소수점이 지워져 2,333,335 근처(약 1,000배)로 튄다.
     // 정상 동작은 정수 "2334" 뒤에 입력한 자리 하나가 더 붙는 수준(23345)이어야 한다.
     expect(lastValue).toBeLessThan(100_000); // 1,000배로 튀면 백만 단위가 된다
     expect(lastValue).toBe(23345);
   });
 });
 
-describe('NumberField — 상한 클램프 (2026-08-23 보안 검토 MEDIUM)', () => {
+describe('NumberField — 상한 클램프', () => {
   it('기본 상한 1억을 넘는 값은 잘려서 저장되고 화면 표시도 함께 잘린다', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

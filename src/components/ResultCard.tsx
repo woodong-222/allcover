@@ -1,25 +1,19 @@
 /**
  * 결과 카드 — 캡처(html-to-image) 대상 컴포넌트.
- * 계획서: .omc/plans/2026-08-21-allcover-bowling-settlement.md §3 인수조건 D5, D7, B3 / §5 R1, R9
- * G4: 내기 판이 하나도 없으면 "내기±" 열과 판별 내기 요약(D7)을 숨긴다.
  *
- * 판정은 전역 플래그가 아니라 `rounds` 에서 파생한다 (2026-08-24). 예전에는 `settlement.mode`
- * 라는 별도 상태를 봤는데, 그러면 mode 가 없는 구버전 데이터에서 극성을 잘못 잡아 내기 정보가
- * 조용히 사라지는 함정이 있었다. 이제는 판이 하나라도 내기면 보여주므로 그 함정 자체가 없다.
+ * "내기±" 열과 판별 내기 요약을 보일지는 전역 플래그가 아니라 `rounds` 에서 파생한다.
+ * 판이 하나라도 내기면 보여주고, 전부 정산이면 숨긴다. 별도 모드 상태를 두면 그 값이 없는
+ * 구버전 데이터에서 극성을 잘못 잡아 내기 정보가 조용히 사라진다.
  *
- * 총무/송금 안내는 2026-08-21 사용자 요청으로 제거됐다. 볼링장에서는 누가 카드로 긁었는지
- * 다들 아는데 앱이 굳이 지정을 받을 이유가 없다는 판단. 결과 카드는 "누가 얼마"와 총액만
- * 보여준다 (types.ts의 Settlement.treasurerId 제거 주석 참고).
- *
- * R1: 이 컴포넌트(및 하위 요소) 안에서 쓰는 모든 색은 src/index.css 의 hex CSS 변수
+ * 이 컴포넌트(및 하위 요소) 안에서 쓰는 모든 색은 src/index.css 의 hex CSS 변수
  * (--card-bg, --card-fg, --card-muted, --card-border, --card-accent, --card-accent-soft,
  * --card-positive, --card-negative) 만 사용한다. Tailwind 색상 유틸(bg-*, text-* 등)은
  * oklch() 로 컴파일되어 html-to-image 의 SVG foreignObject 직렬화에서 깨질 수 있으므로
  * 색 지정은 반드시 inline style 로 var(--card-*) 를 참조한다. 레이아웃(flex/grid/gap/padding/
  * text-size 등 색과 무관한) Tailwind 유틸은 사용해도 된다.
  *
- * D1/R2: 부모(결과 화면)는 이 컴포넌트가 마운트된 노드를 ref 로 잡아 capture.ts의
- * captureNode/createCapturer 로 "미리" 캡처해둔다. 그래서 이 컴포넌트는 순수 표시용이며
+ * 부모(결과 화면)는 이 컴포넌트가 마운트된 노드를 ref 로 잡아 capture.ts의
+ * captureNode/createCapturer 로 미리 캡처해둔다. 그래서 이 컴포넌트는 순수 표시용이며
  * 캡처 트리거를 스스로 갖지 않는다.
  *
  * 결합도를 낮추기 위해 계산 결과(results/breakdowns/totalImbalance)는 전부
@@ -30,10 +24,10 @@ import { forwardRef } from 'react';
 import type { Extra, Member, MemberResult, Round, RoundBreakdown, Settlement } from '../types';
 import { formatDate, formatKRW, formatSigned } from '../lib/format';
 
-/** R9: 13명 이상이면 행 높이·폰트를 축소해 카드가 지나치게 길어지지 않게 한다 */
+/** 이 인원수를 넘으면 행 높이·폰트를 축소해 카드가 지나치게 길어지지 않게 한다 */
 const COMPACT_THRESHOLD = 13;
 
-/** 카드 기본 폭. 기타 항목이 하나뿐이던 시절의 고정값이며 캡처 PNG 의 기준 가로다 */
+/** 카드 기본 폭. 캡처 PNG 의 기준 가로다 */
 const BASE_CARD_WIDTH = 540;
 /** 기타 열이 하나 늘 때마다 넓히는 폭 */
 const EXTRA_COLUMN_WIDTH = 70;
@@ -49,14 +43,11 @@ const MAX_EXTRA_COLUMNS = 4;
 export type ExtraColumn = { label: string; ids: string[] };
 
 /**
- * 기타비용 항목을 표의 열로 펼친다 (2026-08-25).
- *
- * 예전에는 항목이 몇 개든 "기타" 한 열에 합계만 찍혀서, 카드를 받은 사람이 그 금액이
- * 무엇 때문인지 알 수 없었다. `Extra.amounts` 가 사람별 금액 맵이라 "누가 어느 항목에
- * 얼마" 를 정확히 아는데도 표에서 뭉개고 있던 셈이다.
+ * 기타비용 항목을 표의 열로 펼친다. 합계 한 열로 뭉개면 카드를 받은 사람이 그 금액이
+ * 무엇 때문인지 알 수 없다.
  *
  * 항목이 많으면 열이 무한정 늘어 카드가 읽을 수 없게 넓어지므로 `maxCols` 에서 자른다.
- * 자를 때 뒤쪽을 **버리지 않고** "기타" 한 열로 합친다 — 버리면 열 합계가 `MemberResult.extra`
+ * 자를 때 뒤쪽을 버리지 않고 "기타" 한 열로 합친다 — 버리면 열 합계가 `MemberResult.extra`
  * 와 어긋나 카드가 조용히 거짓말을 한다.
  */
 export function extraColumns(extras: Extra[], maxCols = MAX_EXTRA_COLUMNS): ExtraColumn[] {
@@ -72,7 +63,7 @@ export function extraColumns(extras: Extra[], maxCols = MAX_EXTRA_COLUMNS): Extr
 /**
  * 기타 열 수에 맞춘 카드 폭.
  *
- * 첫 열은 폭을 늘리지 않는다 — 기존 540px 표에 이미 "기타" 열 하나가 들어가 있었다.
+ * 첫 열은 폭을 늘리지 않는다 — 기본 540px 표에 이미 열 하나가 들어갈 자리가 있다.
  * 둘째 열부터 항목당 70px 씩 넓히고 상한에서 자른다.
  */
 export function cardWidth(columnCount: number): number {
@@ -98,7 +89,7 @@ function nameLookup(members: Member[]): Record<string, string> {
   return map;
 }
 
-/** D7: 판별 내기 요약 한 줄. 방식·판돈(또는 금액)·순위(또는 진 쪽)를 포함한다 */
+/** 판별 내기 요약 한 줄. 방식·판돈(또는 금액)·순위(또는 진 쪽)를 포함한다 */
 function describeRoundBet(
   round: Round,
   index: number,
@@ -138,7 +129,7 @@ export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function R
   const names = nameLookup(members);
   const nameOf = (id: string) => names[id] ?? id;
   const total = results.reduce((sum, r) => sum + r.rounded, 0);
-  // G4: 판이 하나라도 내기면 내기 표시를 남긴다. 전부 정산('none')일 때만 숨긴다.
+  // 판이 하나라도 내기면 내기 표시를 남긴다. 전부 정산('none')일 때만 숨긴다.
   const hideBet = !rounds.some((r) => r.method !== 'none');
 
   const roundImbalances = breakdowns.filter((b) => b.imbalance !== 0);
@@ -205,7 +196,7 @@ export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function R
 
       {/*
        * 분담 대상이 전원 삭제된 기타비용. 그 금액은 아무에게도 청구되지 않아 정산에서
-       * 사라지므로, 사용자가 실제로 그만큼 덜 걷게 된다. 반드시 드러내야 한다 (F3).
+       * 사라지므로, 사용자가 실제로 그만큼 덜 걷게 된다. 반드시 드러내야 한다.
        */}
       {unassignedExtras.length > 0 && (
         <div
@@ -297,7 +288,7 @@ export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function R
       {/*
        * 전원이 같은 금액을 내도록 1원 단위로 올린 결과 실제 결제액보다 더 걷힌 금액.
        * 나눗셈 한 번당 최대 (인원-1)원이라 보통 1~2원이다. 금액은 사소하지만,
-       * "한 명만 1원 덜 내는 것보다 낫다"는 결정의 전제가 바로 이 노출이다 (F1).
+       * "한 명만 1원 덜 내는 것보다 낫다"는 결정의 전제가 바로 이 노출이다.
        */}
       {/*
        * 가드가 `> 0` 인 이유: 이 값은 구조적으로 항상 0 이상이지만(초과분만 누적한다),
@@ -316,7 +307,7 @@ export const ResultCard = forwardRef<HTMLDivElement, ResultCardProps>(function R
         </p>
       )}
 
-      {/* 판별 내기 요약 (D7) — 전 판이 정산이면 숨긴다 (G4) */}
+      {/* 판별 내기 요약 — 전 판이 정산이면 숨긴다 */}
       {!hideBet && rounds.length > 0 && (
         <div className="mt-4">
           <p className="mb-2 text-sm font-semibold" style={{ color: 'var(--card-muted)' }}>

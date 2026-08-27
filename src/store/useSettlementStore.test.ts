@@ -28,8 +28,7 @@ describe('useSettlementStore: 액션 로직', () => {
   });
 
   it('addRound: 첫 판은 전체 멤버 참여 / teams null / method none / ante 0으로 시작', () => {
-    // defaultAnte는 Settlement/Prefs 양쪽에서 완전히 삭제됐다 (2026-08-21) —
-    // 첫 판의 ante는 항상 0에서 시작해 사용자가 그 판에서 직접 입력한다.
+    // 첫 판의 ante 는 항상 0에서 시작해 사용자가 그 판에서 직접 입력한다.
     const members = addMembers(['A', 'B', 'C']);
     useSettlementStore.getState().addRound();
     const round = useSettlementStore.getState().settlement.rounds[0];
@@ -165,7 +164,7 @@ describe('useSettlementStore: 액션 로직', () => {
     void d;
   });
 
-  it('setTeams: ranking이 채워진 라운드에 setTeams를 호출하면 ranking이 비워진다 (HIGH 회귀 수정)', () => {
+  it('setTeams: ranking이 채워진 라운드에 setTeams를 호출하면 ranking이 비워진다', () => {
     const [a, b, c, d] = addMembers(['A', 'B', 'C', 'D']);
     useSettlementStore.getState().addRound();
     const roundId = useSettlementStore.getState().settlement.rounds[0].id;
@@ -182,7 +181,7 @@ describe('useSettlementStore: 액션 로직', () => {
     expect(useSettlementStore.getState().settlement.rounds[0].ranking).toEqual([]);
   });
 
-  it('setTeams: losers가 채워진 라운드에 setTeams를 호출하면 losers가 비워진다 (HIGH 회귀 수정)', () => {
+  it('setTeams: losers가 채워진 라운드에 setTeams를 호출하면 losers가 비워진다', () => {
     const [a, b, c, d] = addMembers(['A', 'B', 'C', 'D']);
     useSettlementStore.getState().addRound();
     const roundId = useSettlementStore.getState().settlement.rounds[0].id;
@@ -206,7 +205,7 @@ describe('useSettlementStore: 액션 로직', () => {
   });
 
   it('버그 재현: 팀전에서 개인전으로 전환 후 tapRank해도 같은 멤버가 두 그룹에 동시에 들어가지 않는다', () => {
-    // reviewer가 보고한 재현 시나리오 그대로: 4명, 게임비 4,000, ante 1,000
+    // 재현 시나리오: 4명, 게임비 4,000, ante 1,000
     // 1) 2팀 편성 -> 2) 판돈분배, 1팀 탭(1등) -> 3) 개인전으로 전환 -> 4) m1 탭
     const [m1, m2, m3, m4] = addMembers(['m1', 'm2', 'm3', 'm4']);
     useSettlementStore.getState().setFees({ gameFeePerGame: 4000 });
@@ -221,7 +220,7 @@ describe('useSettlementStore: 액션 로직', () => {
     useSettlementStore.getState().setAnte(roundId, 1000);
     useSettlementStore.getState().tapRank(roundId, 0); // 팀 기준 1등: [m1,m2]
 
-    useSettlementStore.getState().setTeams(roundId, null); // 개인전으로 전환 -> setTeams 수정으로 ranking 초기화됨
+    useSettlementStore.getState().setTeams(roundId, null); // 개인전으로 전환 -> ranking 초기화됨
     expect(useSettlementStore.getState().settlement.rounds[0].ranking).toEqual([]);
 
     useSettlementStore.getState().tapRank(roundId, m1.id); // 1등: m1
@@ -281,7 +280,7 @@ describe('useSettlementStore: 액션 로직', () => {
     expect(round1.participants).not.toContain(a.id);
     // A만 있던 solo team은 통째로 사라진다
     expect(round1.teams).toEqual([[b.id, c.id]]);
-    // ranking의 [A] 그룹은 비어 사라지고, [A,B... wait no B,C] 그룹은 A가 없었으므로 그대로
+    // ranking 의 [A] 그룹은 비어 사라지고, [B,C] 그룹은 그대로 남는다
     expect(round1.ranking).toEqual([[b.id, c.id]]);
 
     const round2 = s.rounds[1];
@@ -294,7 +293,7 @@ describe('useSettlementStore: 액션 로직', () => {
     expect(a.id in s.extras[0].amounts).toBe(false);
   });
 
-  it('resetSession: 세션(멤버/판)은 초기화되지만 prefs와 최근 멤버 이름은 유지된다 (C5)', () => {
+  it('resetSession: 세션(멤버/판)은 초기화되지만 prefs와 최근 멤버 이름은 유지된다', () => {
     usePrefsStore.getState().setFees({ gameFeePerGame: 4000, shoeFee: 2000 });
     addMembers(['A', 'B']);
     useSettlementStore.getState().addRound();
@@ -320,9 +319,8 @@ describe('useSettlementStore: 액션 로직', () => {
     expect(usePrefsStore.getState().shoeFee).toBe(1500);
   });
 
-  it('addRound: method가 none이어도 직전 판을 그대로 상속한다 (전역 모드 게이트 제거)', () => {
-    // 이전에는 mode === 'normal' 이면 method/ante/payout 상속을 막는 분기가 있었다.
-    // 전역 모드가 사라졌으므로(2026-08-24) 상속은 method 값과 무관하게 항상 일어난다.
+  it('addRound: method가 none이어도 직전 판을 그대로 상속한다', () => {
+    // 상속은 method 값과 무관하게 언제나 일어난다.
     const members = addMembers(['A', 'B']);
     useSettlementStore.getState().addRound();
     const round1Id = useSettlementStore.getState().settlement.rounds[0].id;
@@ -394,13 +392,13 @@ describe('useSettlementStore: 액션 로직', () => {
   });
 });
 
-describe('영속성 (C1~C4): localStorage 라운드트립', () => {
+describe('영속성 — localStorage 라운드트립', () => {
   beforeEach(() => {
     window.localStorage.clear();
     vi.resetModules();
   });
 
-  it('C1: 요금 프리셋 입력 후 새로고침해도 값이 복원된다', async () => {
+  it('요금 프리셋 입력 후 새로고침해도 값이 복원된다', async () => {
     {
       const { usePrefsStore: prefs } = await import('./usePrefsStore');
       prefs.getState().setFees({ gameFeePerGame: 4000, shoeFee: 2000 });
@@ -414,7 +412,7 @@ describe('영속성 (C1~C4): localStorage 라운드트립', () => {
     expect(p.shoeFee).toBe(2000);
   });
 
-  it('C2: 판 3개를 입력한 세션이 탭을 닫았다 열어도 전체 복원된다', async () => {
+  it('판 3개를 입력한 세션이 탭을 닫았다 열어도 전체 복원된다', async () => {
     let snapshot: unknown;
     {
       const { useSettlementStore: store } = await import('./useSettlementStore');
@@ -435,7 +433,7 @@ describe('영속성 (C1~C4): localStorage 라운드트립', () => {
     expect(reloaded.getState().settlement).toEqual(snapshot);
   });
 
-  it('C3: 파싱 불가능한 저장값은 백업 후 초기 상태로 복구되며 크래시하지 않는다', async () => {
+  it('파싱 불가능한 저장값은 백업 후 초기 상태로 복구되며 크래시하지 않는다', async () => {
     window.localStorage.setItem('allcover:session:v1', '{ 이건 유효한 JSON이 아님 ]');
 
     const { useSettlementStore: reloaded } = await import('./useSettlementStore');
@@ -448,7 +446,7 @@ describe('영속성 (C1~C4): localStorage 라운드트립', () => {
     expect(window.localStorage.getItem(backupKey!)).toContain('유효한 JSON이 아님');
   });
 
-  it('C3: 알 수 없는 버전의 저장값은 백업 후 초기 상태로 복구되며 크래시하지 않는다', async () => {
+  it('알 수 없는 버전의 저장값은 백업 후 초기 상태로 복구되며 크래시하지 않는다', async () => {
     window.localStorage.setItem(
       'allcover:session:v1',
       JSON.stringify({ state: { settlement: { members: [{ id: 'x', name: '유령' }] } }, version: 999 })
@@ -579,7 +577,7 @@ describe('영속성 (C1~C4): localStorage 라운드트립', () => {
       gameFeePerGame: 4000,
       shoeFee: 2000,
       shoeRenters: ['m1'],
-      defaultAnte: 1000, // v1 전용 필드(2026-08-21 삭제)
+      defaultAnte: 1000, // v1 전용 필드
       rounds: [
         {
           id: 'r1',
@@ -595,8 +593,8 @@ describe('영속성 (C1~C4): localStorage 라운드트립', () => {
         },
       ],
       extras: [{ id: 'e1', label: '음료', amount: 3000, splitAmong: 'all' }],
-      treasurerId: 'm1', // v1 전용 필드(2026-08-21 삭제)
-      roundingUnit: 100, // v1 전용 필드(2026-08-21 삭제)
+      treasurerId: 'm1', // v1 전용 필드
+      roundingUnit: 100, // v1 전용 필드
     };
     window.localStorage.setItem(
       'allcover:session:v1',
@@ -626,7 +624,7 @@ describe('영속성 (C1~C4): localStorage 라운드트립', () => {
     expect(backupKey).toBeUndefined();
   });
 
-  it('G7: 버전이 1/2/3 어느 것도 아니면(알 수 없는 버전) 여전히 백업 후 초기화된다', async () => {
+  it('버전이 1/2/3 어느 것도 아니면(알 수 없는 버전) 여전히 백업 후 초기화된다', async () => {
     window.localStorage.setItem(
       'allcover:session:v1',
       JSON.stringify({
@@ -651,8 +649,8 @@ describe('영속성 (C1~C4): localStorage 라운드트립', () => {
         state: {
           gameFeePerGame: 4000,
           shoeFee: 2000,
-          defaultAnte: 1000, // v1 전용 필드(2026-08-21 삭제)
-          roundingUnit: 100, // v1 전용 필드(2026-08-21 삭제)
+          defaultAnte: 1000, // v1 전용 필드
+          roundingUnit: 100, // v1 전용 필드
           recentMemberNames: ['영희', '철수'],
         },
         version: 1,
@@ -698,7 +696,7 @@ describe('영속성 (C1~C4): localStorage 라운드트립', () => {
     expect(backupKey).toBeUndefined();
   });
 
-  it('C3(LOW 수정): 버전은 일치하지만 state 모양이 깨진 저장값도 백업 후 초기화되며 크래시하지 않는다', async () => {
+  it('버전은 일치하지만 state 모양이 깨진 저장값도 백업 후 초기화되며 크래시하지 않는다', async () => {
     // version이 CURRENT_VERSION과 같으면 zustand persist는 migrate를 호출하지 않고
     // state를 그대로 쓴다. settlement가 null이면 calc.ts가 렌더 중 TypeError로 죽는다.
     window.localStorage.setItem(
@@ -716,7 +714,7 @@ describe('영속성 (C1~C4): localStorage 라운드트립', () => {
     expect(backupKey).toBeDefined();
   });
 
-  it('C3(LOW 수정): prefs도 버전 일치 + 모양이 깨진 값이면 백업 후 초기화된다', async () => {
+  it('prefs도 버전 일치 + 모양이 깨진 값이면 백업 후 초기화된다', async () => {
     window.localStorage.setItem(
       'allcover:prefs:v1',
       JSON.stringify({ state: { gameFeePerGame: '오억원', recentMemberNames: null }, version: 3 })
@@ -730,7 +728,7 @@ describe('영속성 (C1~C4): localStorage 라운드트립', () => {
     expect(backupKey).toBeDefined();
   });
 
-  it('C4: localStorage 접근이 throw하는 환경에서도 스토어 생성/액션이 크래시하지 않는다', async () => {
+  it('localStorage 접근이 throw하는 환경에서도 스토어 생성/액션이 크래시하지 않는다', async () => {
     const setSpy = vi.spyOn(window.localStorage.__proto__, 'setItem').mockImplementation(() => {
       throw new DOMException('SecurityError');
     });
@@ -750,15 +748,14 @@ describe('영속성 (C1~C4): localStorage 라운드트립', () => {
   });
 });
 
-describe('duplicateRound — 판을 통째로 복제한다 (전역 모드 게이트 제거)', () => {
+describe('duplicateRound — 판을 통째로 복제한다', () => {
   beforeEach(() => {
     usePrefsStore.setState({ ...initialPrefs });
     useSettlementStore.getState().resetSession();
   });
 
   it('method가 none인 판도 transferSource/transferAmount까지 그대로 복제된다', () => {
-    // 이전에는 mode === 'normal' 이면 내기 필드를 비우고 복제했다. 전역 모드가 사라졌으므로
-    // (2026-08-24) 복제는 method 값과 무관하게 언제나 원본 그대로다.
+    // 복제는 method 값과 무관하게 언제나 원본 그대로다.
     const s = useSettlementStore.getState();
     s.addMember('a');
     s.addMember('b');

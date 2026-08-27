@@ -52,7 +52,7 @@ describe('ShoeRentalPicker', () => {
     expect(useSettlementStore.getState().settlement.shoeRenters).toEqual([]);
   });
 
-  it('E2: 체크박스를 감싼 label이 44x44px 히트 영역을 갖는다 (한 글자 이름도)', () => {
+  it('체크박스를 감싼 label이 44x44px 히트 영역을 갖는다 (한 글자 이름도)', () => {
     useSettlementStore.getState().addMember('가');
     useSettlementStore.getState().setFees({ shoeFee: 2000 });
     render(<ShoeRentalPicker />);
@@ -64,7 +64,7 @@ describe('ShoeRentalPicker', () => {
   });
 });
 
-describe('ShoeRentalPicker — 접이식 (2026-08-24 사용자 요청)', () => {
+describe('ShoeRentalPicker — 접이식', () => {
   beforeEach(() => {
     usePrefsStore.setState({ ...initialPrefs });
     useSettlementStore.getState().resetSession();

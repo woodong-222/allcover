@@ -154,7 +154,7 @@ describe('RoundCard', () => {
     expect(currentRound().losers).toEqual(['d']);
   });
 
-  it('R4: imbalance가 0이 아닌 판에 경고 배지가 뜬다', () => {
+  it('imbalance가 0이 아닌 판에 경고 배지가 뜬다', () => {
     // ante 1,000 × 4명 = 4,000 판돈인데 1등에게 3,000만 배당 → imbalance -1,000
     seed(makeRound({ method: 'pot', ranking: [['a']], payout: [3000] }));
     render(<Harness />);
@@ -181,10 +181,10 @@ describe('RoundCard', () => {
   });
 
   /**
-   * 히트 영역은 **실제 클릭 대상(button)** 에서 잰다. 감싸는 컨테이너에 min-h 를 붙이고
-   * 안쪽 버튼은 28×36px 이었던 사고가 있었으므로, 컨테이너를 보는 검사로 대체하면 안 된다.
+   * 히트 영역은 실제 클릭 대상(button)에서 잰다. 감싸는 컨테이너에만 min-h 를 붙이면
+   * 안쪽 버튼이 28×36px 로 남을 수 있으므로, 컨테이너를 보는 검사로 대체하면 안 된다.
    */
-  it('E1/E2: 칩 목록은 flex-wrap이고 칩/버튼이 44px 히트 영역을 갖는다', () => {
+  it('칩 목록은 flex-wrap이고 칩/버튼이 44px 히트 영역을 갖는다', () => {
     seed(makeRound({ method: 'pot' }));
     render(<Harness />);
 
@@ -210,12 +210,12 @@ describe('RoundCard', () => {
 });
 
 /**
- * finding #3 회귀 방지 — 소수 배당이 만들던 "0원 어긋남" 가짜 경고.
- * 예전에는 승자독식이 pot/인원을 그대로 넣어 2333.333…을 만들었고,
- * (pot/n)*n !== pot 인 인원수에서는 imbalance에 1.1e-13이 남았다.
- * formatKRW가 그 값을 "0원"으로 찍어 "판돈보다 0원 적습니다"라는 무의미한 빨간 경고가 떴다.
+ * 소수 배당이 만드는 "0원 어긋남" 가짜 경고를 막는다.
+ * 승자독식이 pot/인원을 그대로 넣으면 2333.333…이 되고, (pot/n)*n !== pot 인 인원수에서는
+ * imbalance에 1.1e-13이 남는다. formatKRW가 그 값을 "0원"으로 찍으면
+ * "판돈보다 0원 적습니다"라는 무의미한 빨간 경고가 뜬다.
  */
-describe('RoundCard — 가짜 불일치 경고 (finding #3)', () => {
+describe('RoundCard — 가짜 불일치 경고', () => {
   const NINE = Array.from({ length: 9 }, (_, i) => ({ id: `m${i}`, name: `참가자${i}` }));
   const NINE_IDS = NINE.map((m) => m.id);
 
@@ -241,7 +241,7 @@ describe('RoundCard — 가짜 불일치 경고 (finding #3)', () => {
   }
 
   it('7명 3팀(3/2/2) 승자독식은 소수 배당을 만들지 않는다', async () => {
-    // pot 7,000 / 1등 3명. 예전 구현은 2333.3333333333335 를 그대로 payout 에 넣었다.
+    // pot 7,000 / 1등 3명. 그대로 나누면 2333.3333333333335 가 payout 에 들어간다.
     seed(potRound([3, 2, 2], 1000), NINE);
     const user = userEvent.setup();
     render(<Harness />);
@@ -255,7 +255,7 @@ describe('RoundCard — 가짜 불일치 경고 (finding #3)', () => {
 
   it('정수로 나눌 수 없는 판은 "0원"이 아니라 실제 남은 금액을 경고한다', async () => {
     // 9명 ante 100 → pot 900, 등수 그룹은 7명 하나. 900 % 7 === 4 라 정수 해가 없다.
-    // 예전 구현: payout 128.571… → imbalance 1.14e-13 → "판돈보다 0원 적습니다" 라는 가짜 경고.
+    // 소수로 맞추면 payout 128.571… → imbalance 1.14e-13 → "판돈보다 0원 적습니다" 라는 가짜 경고.
     seed(potRound([7], 100, 9), NINE);
     const user = userEvent.setup();
     render(<Harness />);
@@ -271,12 +271,11 @@ describe('RoundCard — 가짜 불일치 경고 (finding #3)', () => {
 });
 
 /**
- * 2단 세그먼트 — 1단 `정산 / 내기`, 2단 `판돈 분배 / 판비 내주기` (2026-08-24).
+ * 2단 세그먼트 — 1단 `정산 / 내기`, 2단 `판돈 분배 / 판비 내주기`.
  *
- * 전역 모드 토글이 없어졌으므로 정산/내기는 판마다 `Round.method` 로 정해진다.
- * 정산('none')을 고른 판은 내기 UI를 전부 숨기되, 라운드에 들어 있는
- * ante/payout/ranking/losers/teams 는 **지우지 않는다.** 잘못 눌렀을 때
- * 순위·배당이 날아가면 복구할 방법이 없기 때문이다.
+ * 정산/내기는 판마다 `Round.method` 로 정해진다. 정산('none')을 고른 판은 내기 UI를
+ * 전부 숨기되, 라운드에 들어 있는 ante/payout/ranking/losers/teams 는 지우지 않는다.
+ * 잘못 눌렀을 때 순위·배당이 날아가면 복구할 방법이 없기 때문이다.
  */
 describe('RoundCard — 정산/내기 2단 세그먼트', () => {
   /** 내기 입력이 꽉 찬 라운드. imbalance 도 0이 아니다 (pot 4,000 vs 배당 3,000) */
@@ -396,7 +395,7 @@ describe('RoundCard — 정산/내기 2단 세그먼트', () => {
 
   /**
    * 비파괴 왕복. 정산으로 바꿨다 내기로 돌아왔을 때 입력이 살아 있어야 한다.
-   * `method` 는 정의상 'none' 을 거치므로 제외하고, **데이터 필드**만 비교한다.
+   * `method` 는 정의상 'none' 을 거치므로 제외하고, 데이터 필드만 비교한다.
    */
   it('비파괴: 정산 -> 내기 왕복 후 ranking/payout/losers/teams/ante 가 그대로다', async () => {
     seed(loadedRound());

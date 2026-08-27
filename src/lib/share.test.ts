@@ -24,7 +24,7 @@ describe('shareImage', () => {
     Reflect.deleteProperty(navigator, 'share');
   });
 
-  it('D2: canShare가 true이고 share가 성공하면 "shared"를 반환하고 다운로드하지 않는다', async () => {
+  it('canShare가 true이고 share가 성공하면 "shared"를 반환하고 다운로드하지 않는다', async () => {
     const shareMock = vi.fn().mockResolvedValue(undefined);
     navigator.canShare = vi.fn(() => true);
     navigator.share = shareMock;
@@ -36,7 +36,7 @@ describe('shareImage', () => {
     expect(clickSpy).not.toHaveBeenCalled();
   });
 
-  it('D4: share가 AbortError를 던지면 "cancelled"를 반환하고, 다운로드하지 않고, 에러를 전파하지 않는다', async () => {
+  it('share가 AbortError를 던지면 "cancelled"를 반환하고, 다운로드하지 않고, 에러를 전파하지 않는다', async () => {
     navigator.canShare = vi.fn(() => true);
     navigator.share = vi.fn().mockRejectedValue(new DOMException('cancelled', 'AbortError'));
 
@@ -46,7 +46,7 @@ describe('shareImage', () => {
     expect(clickSpy).not.toHaveBeenCalled();
   });
 
-  it('D3: canShare가 없으면(미지원 환경) "downloaded"를 반환하고 <a> 클릭이 발생한다', async () => {
+  it('canShare가 없으면(미지원 환경) "downloaded"를 반환하고 <a> 클릭이 발생한다', async () => {
     const outcome = await shareImage(makeBlob(), 'allcover-20260821.png');
 
     expect(outcome).toBe('downloaded');
@@ -93,7 +93,7 @@ describe('downloadBlob', () => {
     vi.unstubAllGlobals();
   });
 
-  it('finding #7: <a>를 document.body에 붙였다가 클릭 후 뗀다 (detached 앵커의 click은 일부 브라우저가 무시한다)', () => {
+  it('<a>를 document.body에 붙였다가 클릭 후 뗀다 (detached 앵커의 click은 일부 브라우저가 무시한다)', () => {
     vi.stubGlobal('URL', {
       ...URL,
       createObjectURL: vi.fn(() => 'blob:mock-url'),
@@ -118,7 +118,7 @@ describe('downloadBlob', () => {
     vi.unstubAllGlobals();
   });
 
-  it('finding #7: revokeObjectURL은 click과 같은 동기 블록에서 호출되지 않고, 타이머가 한 틱 지난 뒤에 호출된다', () => {
+  it('revokeObjectURL은 click과 같은 동기 블록에서 호출되지 않고, 타이머가 한 틱 지난 뒤에 호출된다', () => {
     vi.useFakeTimers();
     const revokeObjectURL = vi.fn();
     vi.stubGlobal('URL', {

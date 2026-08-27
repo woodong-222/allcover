@@ -65,13 +65,9 @@ function evenAmounts(amount: number, ids: string[]): Record<string, number> {
 }
 const deltaSum = (d: Record<string, number>) => sum(Object.values(d));
 
-// ---------------------------------------------------------------------------
-// A1
-// ---------------------------------------------------------------------------
-
 describe('calculate — 기본 정산', () => {
-  it('A1: 일반 모드(내기 없음) 게임비 + 신발비 합산이 정확하다', () => {
-    // 계획서 A1 의 기대값 [16000, 14000, 12000] / 합 42,000 을 만족하는 구성:
+  it('일반 모드(내기 없음) 게임비 + 신발비 합산이 정확하다', () => {
+    // 기대값 [16000, 14000, 12000] / 합 42,000 을 만족하는 구성:
     // 게임단가 4,000, 참여판수 4/3/3, 신발비 2,000 을 b 1명이 대여.
     const ms = members('a', 'b', 'c');
     const s = mkSettlement({
@@ -93,7 +89,7 @@ describe('calculate — 기본 정산', () => {
     expect(r.of('c').gameCount).toBe(3);
     expect(r.totalImbalance).toBe(0);
 
-    // 계획서에 적힌 입력(참여판수 3/3/2, 신발 2명)을 그대로 쓰면 합계는 36,000 이다.
+    // 참여판수 3/3/2 에 신발 2명이면 합계는 36,000 이다.
     const literal = mkSettlement({
       members: ms,
       gameFeePerGame: 4000,
@@ -112,11 +108,11 @@ describe('calculate — 기본 정산', () => {
 });
 
 // ---------------------------------------------------------------------------
-// A2 — pot 방식 (계획서 §2 손계산 값 하드코딩)
+// pot 방식 — 손계산 값 하드코딩
 // ---------------------------------------------------------------------------
 
 describe('roundDelta — pot(판돈 분배)', () => {
-  it('A2-1: 개인전 5명, ante 1,000, 1등 3,000 / 2등 2,000 → [-2000,-1000,+1000,+1000,+1000]', () => {
+  it('개인전 5명, ante 1,000, 1등 3,000 / 2등 2,000 → [-2000,-1000,+1000,+1000,+1000]', () => {
     const round = mkRound({
       id: 'r1',
       participants: ['m1', 'm2', 'm3', 'm4', 'm5'],
@@ -131,7 +127,7 @@ describe('roundDelta — pot(판돈 분배)', () => {
     expect(deltaSum(b.delta)).toBe(0);
   });
 
-  it('A2-2: 승자독식 5명, ante 1,000, 1등 5,000 → 1등 -4,000 / 나머지 +1,000', () => {
+  it('승자독식 5명, ante 1,000, 1등 5,000 → 1등 -4,000 / 나머지 +1,000', () => {
     const round = mkRound({
       id: 'r2',
       participants: ['m1', 'm2', 'm3', 'm4', 'm5'],
@@ -146,7 +142,7 @@ describe('roundDelta — pot(판돈 분배)', () => {
     expect(deltaSum(b.delta)).toBe(0);
   });
 
-  it('A2-3: 팀전 4팀×2명, ante 1,000, 1등팀 인당 3,000 / 2등팀 인당 1,000', () => {
+  it('팀전 4팀×2명, ante 1,000, 1등팀 인당 3,000 / 2등팀 인당 1,000', () => {
     const round = mkRound({
       id: 'r3',
       participants: ['a1', 'a2', 'b1', 'b2', 'c1', 'c2', 'd1', 'd2'],
@@ -181,7 +177,7 @@ describe('roundDelta — pot(판돈 분배)', () => {
     expect(deltaSum(b.delta)).toBe(0);
   });
 
-  it('A6: 팀전 4팀×2명 ante 1,000 에서 1등팀 인당 3,000 만 입력하면 imbalance === -2000', () => {
+  it('팀전 4팀×2명 ante 1,000 에서 1등팀 인당 3,000 만 입력하면 imbalance === -2000', () => {
     const round = mkRound({
       id: 'r4',
       participants: ['a1', 'a2', 'b1', 'b2', 'c1', 'c2', 'd1', 'd2'],
@@ -216,11 +212,11 @@ describe('roundDelta — pot(판돈 분배)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// A3 — transfer 방식 (계획서 §2 손계산 값 하드코딩)
+// transfer 방식 — 손계산 값 하드코딩
 // ---------------------------------------------------------------------------
 
 describe('roundDelta — transfer(판비 내주기)', () => {
-  it('A3-1: 팀전 4:4, amount 4,000 → 진 팀 각 +4,000 / 이긴 팀 각 -4,000', () => {
+  it('팀전 4:4, amount 4,000 → 진 팀 각 +4,000 / 이긴 팀 각 -4,000', () => {
     const round = mkRound({
       id: 'r1',
       participants: ['a1', 'a2', 'a3', 'a4', 'b1', 'b2', 'b3', 'b4'],
@@ -248,7 +244,7 @@ describe('roundDelta — transfer(판비 내주기)', () => {
     expect(deltaSum(b.delta)).toBe(0);
   });
 
-  it('A3-2: 개인전 8명 꼴찌 1명, amount 4,000 → 꼴찌 +28,000 / 나머지 각 -4,000', () => {
+  it('개인전 8명 꼴찌 1명, amount 4,000 → 꼴찌 +28,000 / 나머지 각 -4,000', () => {
     const ids = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8'];
     const round = mkRound({
       id: 'r2',
@@ -265,7 +261,7 @@ describe('roundDelta — transfer(판비 내주기)', () => {
     expect(deltaSum(b.delta)).toBe(0);
   });
 
-  it("A8: transferSource 'gameFee' 라운드는 게임 단가 변경이 자동 반영된다", () => {
+  it("transferSource 'gameFee' 라운드는 게임 단가 변경이 자동 반영된다", () => {
     const round = mkRound({
       id: 'r3',
       participants: ['m1', 'm2', 'm3', 'm4'],
@@ -285,11 +281,11 @@ describe('roundDelta — transfer(판비 내주기)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// R13 — 표시 금액 정수성 (소수점이 공유 이미지에 새는 것 방지)
+// 표시 금액 정수성 — 소수점이 공유 이미지에 새는 것 방지
 // ---------------------------------------------------------------------------
 
-describe('R13: 금액이 소수점으로 새지 않는다', () => {
-  it('R13: 재현 케이스(5명·판비 4,000·진 쪽 3명)에서 betDelta·adjustment 가 전부 정수다', () => {
+describe('금액이 소수점으로 새지 않는다', () => {
+  it('재현 케이스(5명·판비 4,000·진 쪽 3명)에서 betDelta·adjustment 가 전부 정수다', () => {
     const s = mkSettlement({
       members: members('a', 'b', 'c', 'd', 'e'),
       gameFeePerGame: 4000,
@@ -306,7 +302,7 @@ describe('R13: 금액이 소수점으로 새지 않는다', () => {
     });
     const r = byId(s);
 
-    // 8,000원을 3명이 나눠 내되 2,666.666… 이 아니라 **전원 2,667** 이다 (한 명만 덜 내지 않는다)
+    // 8,000원을 3명이 나눠 내되 2,666.666… 이 아니라 전원 2,667 이다 (한 명만 덜 내지 않는다)
     expect(r.of('c').betDelta).toBe(2667);
     expect(r.of('d').betDelta).toBe(2667);
     expect(r.of('e').betDelta).toBe(2667);
@@ -329,7 +325,7 @@ describe('R13: 금액이 소수점으로 새지 않는다', () => {
     }
   });
 
-  it('R13: 실제 표시 문자열에 소수점이 찍히지 않는다', () => {
+  it('실제 표시 문자열에 소수점이 찍히지 않는다', () => {
     const s = mkSettlement({
       members: members('a', 'b', 'c', 'd', 'e'),
       gameFeePerGame: 4000,
@@ -346,7 +342,7 @@ describe('R13: 금액이 소수점으로 새지 않는다', () => {
     });
     const r = byId(s);
 
-    // 수정 전에는 "+2,666.667" / "잔돈 조정 -66.667원" 이 그대로 카카오톡 이미지로 나갔다
+    // 소수점이 새면 "+2,666.667" / "잔돈 조정 -66.667원" 이 그대로 카카오톡 이미지로 나간다
     for (const row of r.results) {
       expect(formatSigned(row.betDelta)).not.toContain('.');
       expect(formatKRW(row.adjustment)).not.toContain('.');
@@ -355,7 +351,7 @@ describe('R13: 금액이 소수점으로 새지 않는다', () => {
     expect(formatSigned(r.of('c').betDelta)).toBe('+2,667');
   });
 
-  it('R13: 진 쪽 2~7명 × 참여 3~8명 조합에서 Σ delta 가 정확히 초과분과 일치한다', () => {
+  it('진 쪽 2~7명 × 참여 3~8명 조합에서 Σ delta 가 정확히 초과분과 일치한다', () => {
     const ids = ['m0', 'm1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7'];
     let checked = 0;
     let withSurplus = 0;
@@ -401,7 +397,7 @@ describe('R13: 금액이 소수점으로 새지 않는다', () => {
     expect(withSurplus).toBe(40);
   });
 
-  it("R13: transferSource 'gameFee' 로 나누어떨어지지 않아도 정수가 유지된다", () => {
+  it("transferSource 'gameFee' 로 나누어떨어지지 않아도 정수가 유지된다", () => {
     const b = roundDelta(
       mkRound({
         id: 'r1',
@@ -482,11 +478,11 @@ describe('ranking 에 중복 멤버가 있어도 불변식이 깨지지 않는�
 });
 
 // ---------------------------------------------------------------------------
-// A7 / A9 — 미참여자, 엣지 케이스
+// 미참여자, 엣지 케이스
 // ---------------------------------------------------------------------------
 
 describe('참여 범위와 엣지 케이스', () => {
-  it('A7: 판별 미참여자는 게임비·판돈·배당 어디에도 포함되지 않는다', () => {
+  it('판별 미참여자는 게임비·판돈·배당 어디에도 포함되지 않는다', () => {
     const s = mkSettlement({
       members: members('a', 'b', 'c', 'd'),
       gameFeePerGame: 4000,
@@ -513,7 +509,7 @@ describe('참여 범위와 엣지 케이스', () => {
     expect(r.breakdowns[0].delta.d).toBeUndefined();
   });
 
-  it('A7: ranking 에 미참여자가 섞여 있어도 판돈·배당 계산에서 제외된다', () => {
+  it('ranking 에 미참여자가 섞여 있어도 판돈·배당 계산에서 제외된다', () => {
     const round = mkRound({
       id: 'r1',
       participants: ['a', 'b', 'c'],
@@ -527,7 +523,7 @@ describe('참여 범위와 엣지 케이스', () => {
     expect(b.imbalance).toBe(0);
   });
 
-  it('A9: losers 0명 → 전원 delta 0, imbalance 0, 크래시 없음', () => {
+  it('losers 0명 → 전원 delta 0, imbalance 0, 크래시 없음', () => {
     const b = roundDelta(
       mkRound({
         id: 'r1',
@@ -542,7 +538,7 @@ describe('참여 범위와 엣지 케이스', () => {
     expect(b.imbalance).toBe(0);
   });
 
-  it('A9: losers 가 참여자 전원 → 전원 delta 0, imbalance 0', () => {
+  it('losers 가 참여자 전원 → 전원 delta 0, imbalance 0', () => {
     const b = roundDelta(
       mkRound({
         id: 'r2',
@@ -557,7 +553,7 @@ describe('참여 범위와 엣지 케이스', () => {
     expect(b.imbalance).toBe(0);
   });
 
-  it('A9: ranking 이 비어 있는 pot 라운드 → 전원 delta 0, imbalance 0', () => {
+  it('ranking 이 비어 있는 pot 라운드 → 전원 delta 0, imbalance 0', () => {
     const b = roundDelta(
       mkRound({
         id: 'r3',
@@ -573,7 +569,7 @@ describe('참여 범위와 엣지 케이스', () => {
     expect(b.imbalance).toBe(0);
   });
 
-  it('A9: participants 가 비어 있는 라운드 → 빈 delta, imbalance 0', () => {
+  it('participants 가 비어 있는 라운드 → 빈 delta, imbalance 0', () => {
     for (const method of ['none', 'pot', 'transfer'] as const) {
       const b = roundDelta(
         mkRound({ id: `r-${method}`, participants: [], method, ante: 1000, payout: [3000] }),
@@ -584,7 +580,7 @@ describe('참여 범위와 엣지 케이스', () => {
     }
   });
 
-  it("A9: method 'none' 라운드는 게임비만 남고 delta 전원 0", () => {
+  it("method 'none' 라운드는 게임비만 남고 delta 전원 0", () => {
     const s = mkSettlement({
       members: members('a', 'b'),
       rounds: [mkRound({ id: 'r1', participants: ['a', 'b'] })],
@@ -603,11 +599,11 @@ describe('참여 범위와 엣지 케이스', () => {
 });
 
 // ---------------------------------------------------------------------------
-// A11 — 기타비용
+// 기타비용
 // ---------------------------------------------------------------------------
 
 describe('기타비용 분담', () => {
-  it("A11: splitAmong 'all' 12,000원 / 5명 / 반올림 100원 → 각 2,400원, 오차 0", () => {
+  it("splitAmong 'all' 12,000원 / 5명 / 반올림 100원 → 각 2,400원, 오차 0", () => {
     const ms = members('a', 'b', 'c', 'd', 'e');
     const extras: Extra[] = [{ id: 'e1', label: '음료', amounts: evenAmounts(12000, ['a', 'b', 'c', 'd', 'e']) }];
     const s = mkSettlement({ members: ms, extras });
@@ -630,14 +626,14 @@ describe('기타비용 분담', () => {
     expect(sum(r.results.map((x) => x.extra))).toBe(9000);
   });
 
-  it('R13: 기타비용 10,000원 / 3명 → 전원 정확히 같은 정수이고 초과분은 2원이다', () => {
+  it('기타비용 10,000원 / 3명 → 전원 정확히 같은 정수이고 초과분은 2원이다', () => {
     const ms = members('a', 'b', 'c');
     const s = mkSettlement({
       members: ms,
       extras: [{ id: 'e1', label: '치킨', amounts: evenAmounts(10000, ['a', 'b', 'c']) }],
     });
     const r = byId(s);
-    // 3,333.333… 을 올려 전원 3,334. 이전 정책의 3,334 / 3,333 / 3,333 과 달리 아무도 덜 내지 않는다
+    // 3,333.333… 을 올려 전원 3,334. 아무도 1원 덜 내지 않는다.
     expect(r.results.map((x) => x.extra)).toEqual([3334, 3334, 3334]);
     expect(sum(r.results.map((x) => x.extra))).toBe(10002);
     expect(sum(r.results.map((x) => x.extra)) - 10000).toBe(2); // 상한 3 미만
@@ -647,7 +643,7 @@ describe('기타비용 분담', () => {
     expect(r.roundingSurplus).toBe(0);
   });
 
-  it("B5'/B6': 나누어떨어지지 않는 기타비용도 전 항목이 정수이고 표시에 소수점이 없다", () => {
+  it("나누어떨어지지 않는 기타비용도 전 항목이 정수이고 표시에 소수점이 없다", () => {
     const s = mkSettlement({
       members: members('a', 'b', 'c'),
       extras: [{ id: 'e1', label: '치킨', amounts: evenAmounts(10000, ['a', 'b', 'c']) }],
@@ -663,7 +659,7 @@ describe('기타비용 분담', () => {
     expect(sum(r.results.map((x) => x.rounded))).toBe(10002);
   });
 
-  it('R13: 여러 금액 × 인원 조합에서 기타비용 초과분이 정확히 상한 안에 있다', () => {
+  it('여러 금액 × 인원 조합에서 기타비용 초과분이 정확히 상한 안에 있다', () => {
     const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
     let checked = 0;
     let withSurplus = 0;
@@ -834,12 +830,11 @@ describe('roundingSurplus — 더 걷힌 금액이 정확히 드러난다', () =
     expect(r.roundingSurplus).toBeLessThan(7 * 2);
   });
 
-  // --- 아래 두 건은 F2 회귀 방지다.
-  //     초기 구현은 roundingSurplus 를 `Σ rounded - 실제결제액` 으로 역산했는데, 그 식에는
-  //     pot 라운드의 -imbalance 와 분담 대상 없는 기타비용 미수금이 함께 섞여 들어갔다.
-  //     그 값을 화면에 내보내면 "올림으로 더 걷힌 금액: -2,000원" 같은 거짓말이 공유 이미지에
-  //     박힌다. 지금은 splitEvenly 호출 지점에서 초과분만 직접 누적한다.
-  it('F2: 배당 불일치(imbalance)는 roundingSurplus 에 섞이지 않는다', () => {
+  // 아래 두 건은 회귀 방지다. roundingSurplus 를 `Σ rounded - 실제결제액` 으로 역산하면
+  // pot 라운드의 -imbalance 와 분담 대상 없는 기타비용 미수금이 함께 섞여 들어가,
+  // "올림으로 더 걷힌 금액: -2,000원" 같은 거짓말이 공유 이미지에 박힌다.
+  // 초과분은 splitEvenly 호출 지점에서만 직접 누적해야 한다.
+  it('배당 불일치(imbalance)는 roundingSurplus 에 섞이지 않는다', () => {
     const s = mkSettlement({
       members: members('a', 'b', 'c', 'd'),
       gameFeePerGame: 4000,
@@ -863,7 +858,7 @@ describe('roundingSurplus — 더 걷힌 금액이 정확히 드러난다', () =
     expect(r.roundingSurplus).toBe(0);
   });
 
-  it('F3: 분담 대상이 전원 빠진 기타비용은 미수금으로 드러나고 초과분에 섞이지 않는다', () => {
+  it('분담 대상이 전원 빠진 기타비용은 미수금으로 드러나고 초과분에 섞이지 않는다', () => {
     const s = mkSettlement({
       members: members('a'),
       gameFeePerGame: 0,
@@ -879,7 +874,7 @@ describe('roundingSurplus — 더 걷힌 금액이 정확히 드러난다', () =
     expect(r.roundingSurplus).toBe(0);
   });
 
-  it('F3: 분담 대상이 남아 있으면 unassignedExtras 가 비어 있다', () => {
+  it('분담 대상이 남아 있으면 unassignedExtras 가 비어 있다', () => {
     const s = mkSettlement({
       members: members('a', 'b'),
       gameFeePerGame: 0,
@@ -893,7 +888,7 @@ describe('roundingSurplus — 더 걷힌 금액이 정확히 드러난다', () =
 });
 
 // ---------------------------------------------------------------------------
-// A4 / A5 / A10 — 고정 시드 랜덤 불변식
+// 고정 시드 랜덤 불변식
 // ---------------------------------------------------------------------------
 
 /** mulberry32 — 외부 의존성 없는 고정 시드 의사난수 생성기 */
@@ -1004,7 +999,7 @@ function makeSettlement(rng: Rng, methods?: Round['method'][]): Settlement {
 }
 
 /**
- * 한 transfer 라운드가 만드는 초과분을 **calc.ts 를 쓰지 않고** 독립적으로 계산한다.
+ * 한 transfer 라운드가 만드는 초과분을 calc.ts 를 쓰지 않고 독립적으로 계산한다.
  *
  * 랜덤 케이스에서 `Σ betDelta >= 0` 만 보면 거의 항상 참이라 아무것도 못 잡는다.
  * Σ betDelta 가 정확히 얼마여야 하는지를 여기서 따로 구해 대조한다.
@@ -1026,8 +1021,8 @@ function transferSurplusOf(round: Round, gameFeePerGame: number): number {
 /**
  * 기타비용이 만드는 올림 초과분.
  *
- * 2026-08-24 부터 `Extra.amounts` 가 사람별 금액을 그대로 담으므로 계산 단계에서 나눗셈을
- * 하지 않는다. 균등 분배는 입력 시점에 이미 끝나 있어 여기서 초과분이 생길 여지가 없다.
+ * `Extra.amounts` 가 사람별 금액을 그대로 담으므로 계산 단계에서 나눗셈을 하지 않는다.
+ * 균등 분배는 입력 시점에 이미 끝나 있어 여기서 초과분이 생길 여지가 없다.
  * 따라서 항상 0 이고, 초과분은 transfer 라운드에서만 나온다.
  */
 function extraSurplusOf(_s: Settlement): number {
@@ -1037,8 +1032,8 @@ function extraSurplusOf(_s: Settlement): number {
 /**
  * 한 케이스에 대해 총액 불변식을 검사하고, imbalance 0 여부를 반환한다.
  *
- * splitEvenly 가 전원 동일 정책으로 바뀐 뒤로 제로섬(`Σ betDelta === 0`)은 더 이상 성립하지 않는다.
- * 대신 초과분이 **정확히 얼마인지**를 독립 계산과 대조한다.
+ * splitEvenly 가 전원을 같은 금액으로 올리므로 제로섬(`Σ betDelta === 0`)은 성립하지 않는다.
+ * 대신 초과분이 정확히 얼마인지를 독립 계산과 대조한다.
  */
 function assertInvariants(s: Settlement): { balanced: boolean; surplus: number } {
   const r = calculate(s);
@@ -1050,7 +1045,7 @@ function assertInvariants(s: Settlement): { balanced: boolean; surplus: number }
   const betSurplus = sum(s.rounds.map((round) => transferSurplusOf(round, s.gameFeePerGame)));
   const extraSurplus = extraSurplusOf(s);
 
-  // 정수 입력이면 엔진 어디에도 부동소수 잔여가 남지 않는다 (R13).
+  // 정수 입력이면 엔진 어디에도 부동소수 잔여가 남지 않는다.
   // toBeCloseTo 로 느슨하게 통과시키면 소수점 유출을 놓친다 — 전부 toBe 로 검사한다.
   for (const row of r.results) {
     expect(Number.isInteger(row.betDelta)).toBe(true);
@@ -1069,12 +1064,12 @@ function assertInvariants(s: Settlement): { balanced: boolean; surplus: number }
   expect(totalBet + r.totalImbalance).toBe(betSurplus);
   // 반올림은 총액을 바꾸지 않는다 (초과분은 이미 splitEvenly 단계에서 반영됐다)
   expect(totalRounded).toBe(totalSub);
-  // roundingSurplus 는 **올림 초과분만** 담는다. imbalance 나 미수금이 섞이면 안 된다 (F2).
+  // roundingSurplus 는 올림 초과분만 담는다. imbalance 나 미수금이 섞이면 안 된다.
   expect(r.roundingSurplus).toBe(betSurplus + extraSurplus);
 
   if (r.totalImbalance === 0) {
-    expect(totalBet).toBe(betSurplus); // A4(개정): 제로섬 대신 "초과분만큼만 더 걷힌다"
-    // A5(개정): Σ rounded 는 Σ base 이상이고, 그 차이가 정확히 판비 나눗셈의 초과분이다
+    expect(totalBet).toBe(betSurplus); // 제로섬이 아니라 "초과분만큼만 더 걷힌다"
+    // Σ rounded 는 Σ base 이상이고, 그 차이가 정확히 판비 나눗셈의 초과분이다
     // (Σ base 안의 extra 에는 기타비용 초과분이 이미 반영돼 있다)
     expect(totalRounded).toBe(totalBase + betSurplus);
     expect(totalRounded).toBeGreaterThanOrEqual(totalBase);
@@ -1085,7 +1080,7 @@ function assertInvariants(s: Settlement): { balanced: boolean; surplus: number }
 }
 
 describe('불변식 — 고정 시드 랜덤', () => {
-  it('A4/A5: 총액·초과분 불변식 — 고정 시드 랜덤 200케이스', () => {
+  it('총액·초과분 불변식 — 고정 시드 랜덤 200케이스', () => {
     const rng = makeRng(20260821);
     let balanced = 0;
     let withSurplus = 0;
@@ -1096,13 +1091,12 @@ describe('불변식 — 고정 시드 랜덤', () => {
     }
     // 균형 케이스가 실제로 충분히 생성되어야 테스트가 공허하지 않다
     expect(balanced).toBeGreaterThan(20);
-    // 초과분이 0 이 아닌 케이스도 충분해야 한다 — 전부 0 이면 위 대조가 아무것도 검증하지 못한다
-    // extras 가 더 이상 초과분을 만들지 않아 transfer 라운드에서만 나온다.
-    // 그래도 충분한 수가 생겨야 위 대조가 공허하지 않다 (실측 10건 기준).
+    // 초과분이 0 이 아닌 케이스도 충분해야 한다 — 전부 0 이면 위 대조가 아무것도 검증하지 못한다.
+    // 초과분은 transfer 라운드에서만 나오므로 그 수가 넉넉해야 한다.
     expect(withSurplus).toBeGreaterThan(5);
   });
 
-  it('A10: 혼합 정산(pot 2 / transfer 2 / none 1)에서도 A4·A5 불변식 유지 — 200케이스', () => {
+  it('혼합 정산(pot 2 / transfer 2 / none 1)에서도 총액·초과분 불변식이 유지된다 — 200케이스', () => {
     const rng = makeRng(777);
     const methods: Round['method'][] = ['pot', 'pot', 'transfer', 'transfer', 'none'];
     let balanced = 0;
@@ -1113,12 +1107,11 @@ describe('불변식 — 고정 시드 랜덤', () => {
       if (out.surplus > 0) withSurplus++;
     }
     expect(balanced).toBeGreaterThan(20);
-    // extras 가 더 이상 초과분을 만들지 않아 transfer 라운드에서만 나온다.
-    // 그래도 충분한 수가 생겨야 위 대조가 공허하지 않다 (실측 10건 기준).
+    // 초과분은 transfer 라운드에서만 나오므로 그 수가 넉넉해야 한다.
     expect(withSurplus).toBeGreaterThan(5);
   });
 
-  it('A10: 혼합 정산 손계산 대조 — 5판 시나리오', () => {
+  it('혼합 정산 손계산 대조 — 5판 시나리오', () => {
     const ms = members('a', 'b', 'c', 'd');
     const s = mkSettlement({
       members: ms,
@@ -1185,11 +1178,11 @@ describe('불변식 — 고정 시드 랜덤', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 반올림 통합 (B1/B3 를 calculate 경로에서 재확인)
+// 반올림 통합 — calculate 경로에서 재확인
 // ---------------------------------------------------------------------------
 
 describe('calculate — 반올림 통합', () => {
-  it("B1'': 나누어떨어지지 않는 기타비용은 전원 동일 금액이 되고 초과분만큼 더 걷힌다", () => {
+  it("나누어떨어지지 않는 기타비용은 전원 동일 금액이 되고 초과분만큼 더 걷힌다", () => {
     const ms = members('a', 'b', 'c');
     const s = mkSettlement({
       members: ms,
@@ -1210,7 +1203,7 @@ describe('calculate — 반올림 통합', () => {
     expect(sum(r.results.map((x) => x.adjustment))).toBe(0);
   });
 
-  it('B3: 입력이 정수면 잔돈 조정이 아예 발생하지 않는다 (배지가 뜨면 안 된다)', () => {
+  it('입력이 정수면 잔돈 조정이 아예 발생하지 않는다 (배지가 뜨면 안 된다)', () => {
     const s = mkSettlement({
       members: members('a', 'b', 'c'),
       gameFeePerGame: 1250,
@@ -1231,7 +1224,7 @@ describe('calculate — 반올림 통합', () => {
     }
   });
 
-  it('B4: 내기로 이득 본 사람의 최종 금액은 음수로 유지된다', () => {
+  it('내기로 이득 본 사람의 최종 금액은 음수로 유지된다', () => {
     const s = mkSettlement({
       members: members('a', 'b', 'c'),
       gameFeePerGame: 1000,
@@ -1256,16 +1249,12 @@ describe('calculate — 반올림 통합', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 표시 정수성 (B6')
-//
-// 전역 정산/내기 모드 게이트 테스트(G1/G2/G8)는 2026-08-24 에 제거했다. 전역 mode 자체가
-// 사라지고 판별 `method === 'none'` 하나로 표현하게 바뀌어 검증 대상이 없어졌다.
+// 표시 정수성
 // ---------------------------------------------------------------------------
 
 /**
  * 내기가 잔뜩 입력된 3판 시나리오.
  * r3 은 일부러 배당(10,000)이 판돈(4,000)을 초과해 `imbalance === +6000` 이다.
- * 이게 없으면 G1 의 `breakdowns[].imbalance === 0` 검사가 공허해진다.
  */
 function betScenario(): Settlement {
   return mkSettlement({
@@ -1305,8 +1294,8 @@ function betScenario(): Settlement {
   });
 }
 
-describe("표시 정수성 (B6')", () => {
-  it("B6': 내기가 섞인 정산에서도 표시 문자열에 소수점이 없다", () => {
+describe('표시 정수성', () => {
+  it('내기가 섞인 정산에서도 표시 문자열에 소수점이 없다', () => {
     {
       const r = byId(betScenario());
       for (const row of r.results) {
@@ -1320,8 +1309,8 @@ describe("표시 정수성 (B6')", () => {
     }
   });
 
-  it("B6': 나누어떨어지지 않는 판비 + 기타비용이 섞여도 표시에 소수점이 없다", () => {
-    // reviewer 실측 사례와 같은 형태: 6명 + 나누어떨어지지 않는 기타비용
+  it('나누어떨어지지 않는 판비 + 기타비용이 섞여도 표시에 소수점이 없다', () => {
+    // 6명 + 나누어떨어지지 않는 기타비용
     const s = mkSettlement({
       members: members('a', 'b', 'c', 'd', 'e', 'f'),
       gameFeePerGame: 4000,

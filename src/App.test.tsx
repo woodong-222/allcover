@@ -64,7 +64,7 @@ describe('App 스모크', () => {
     await addMembers(user, ['가', '나']);
 
     // 스토어 액션을 통해서만 상태를 바꾼다. settlement 객체를 직접 변형하면
-    // imbalance 계산이 조용히 달라진다 (worker-calc 경고 지점).
+    // imbalance 계산이 조용히 달라진다.
     // React 밖에서 스토어를 건드리므로 act 로 감싸야 리렌더가 flush 된다.
     act(() => {
       useSettlementStore.getState().setFees({ gameFeePerGame: 4000 });
@@ -78,7 +78,7 @@ describe('App 스모크', () => {
     expect(within(card).getByText(/16,000원/)).toBeInTheDocument();
   });
 
-  // 총무 지정과 송금 목록은 2026-08-21 에 제거됐다. 결과 카드는 "누가 얼마" 와 총액만 보여준다.
+  // 결과 카드는 "누가 얼마" 와 총액만 보여준다. 총무 지정과 송금 목록은 없다.
   // 회귀로 다시 들어오는 걸 막기 위해 부재를 고정한다.
   it('송금 안내와 총무 관련 표시가 결과 카드에 없다', async () => {
     const user = userEvent.setup();
@@ -96,10 +96,10 @@ describe('App 스모크', () => {
   });
 
   /**
-   * C4. quota 초과는 사파리 프라이빗 모드와 달리 **세션 중간에** 발생한다.
+   * quota 초과는 사파리 프라이빗 모드와 달리 세션 중간에 터진다.
    * 마운트 시 한 번만 판정하는 구현에서는 이 테스트가 실패한다.
    */
-  it('C4: 세션 도중 저장이 실패하면 안내 배너가 나타난다', async () => {
+  it('세션 도중 저장이 실패하면 안내 배너가 나타난다', async () => {
     resetPersistenceStateForTest();
     const user = userEvent.setup();
     render(<App />);
@@ -123,7 +123,7 @@ describe('App 스모크', () => {
     setItemSpy.mockRestore();
   });
 
-  it('C4: 저장이 실패해도 앱은 계속 동작한다', async () => {
+  it('저장이 실패해도 앱은 계속 동작한다', async () => {
     resetPersistenceStateForTest();
     const user = userEvent.setup();
     const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
@@ -139,7 +139,7 @@ describe('App 스모크', () => {
     setItemSpy.mockRestore();
   });
 
-  describe('D1/R2: 공유 버튼 클릭 -> navigator.share 호출', () => {
+  describe('공유 버튼 클릭 -> navigator.share 호출', () => {
     afterEach(() => {
       Reflect.deleteProperty(navigator, 'canShare');
       Reflect.deleteProperty(navigator, 'share');
@@ -160,9 +160,9 @@ describe('App 스모크', () => {
      * fireEvent.click은 동기 디스패치이므로(userEvent.click과 달리) 클릭 자체가
      * 추가 await를 끼워넣지 않는다 — 그래서 이 트릭이 유효하다.
      *
-     * 동시에 클릭 시점에 captureNode/createCapturer가 다시 호출되지 않는지도 함께
-     * 검사한다 (D1: blob은 결과 화면 진입 시 미리 만들어져 있어야 하고, 클릭 시점에
-     * 새로 캡처를 시작하면 안 된다).
+     * 동시에 클릭 시점에 captureNode/createCapturer가 다시 호출되지 않는지도 검사한다.
+     * blob은 결과 화면에 들어올 때 미리 만들어져 있어야 하고, 클릭하고 나서 캡처를
+     * 시작하면 안 된다.
      */
     it('클릭부터 navigator.share 호출까지 await 경계를 넘지 않고, 클릭 시점에 재캡처하지 않는다', async () => {
       const user = userEvent.setup();
@@ -200,7 +200,7 @@ describe('App 스모크', () => {
       expect(shareSpy).toHaveBeenCalledTimes(1);
       expect(sawMicrotaskFlushedAtShareCall).toBe(false);
 
-      // D1: 클릭이 새 캡처를 트리거하지 않는다 — blob은 이미 준비돼 있었다.
+      // 클릭이 새 캡처를 트리거하지 않는다 — blob은 이미 준비돼 있었다.
       expect(vi.mocked(createCapturer).mock.calls.length).toBe(captureCallsBeforeClick);
     });
   });
@@ -223,12 +223,10 @@ describe('App 스모크', () => {
   }
 
   /**
-   * 정산/내기 전환은 **비파괴적**이어야 한다. 정산으로 바꿔도 입력해둔 순위·배당은
-   * 남아 있고 계산에서만 빠진다. 잘못 눌렀을 때 되돌릴 수 없으면 안 되기 때문이다.
-   *
-   * 전역 토글이 사라지면서(2026-08-24) 이 전환은 판별 세그먼트로 옮겨졌다.
+   * 정산/내기 전환은 비파괴적이어야 한다. 정산으로 바꿔도 입력해둔 순위·배당은 남아 있고
+   * 계산에서만 빠진다. 잘못 눌렀을 때 되돌릴 수 없으면 안 되기 때문이다.
    */
-  it('G2: 판의 정산/내기를 왕복해도 입력해둔 내기 데이터가 지워지지 않는다', async () => {
+  it('판의 정산/내기를 왕복해도 입력해둔 내기 데이터가 지워지지 않는다', async () => {
     const user = userEvent.setup();
     render(<App />);
 
@@ -247,7 +245,7 @@ describe('App 스모크', () => {
     expect(after.method).toBe(before.method);
   });
 
-  it('G1: 정산으로 고른 판은 내기 금액이 결과에 반영되지 않는다', async () => {
+  it('정산으로 고른 판은 내기 금액이 결과에 반영되지 않는다', async () => {
     const user = userEvent.setup();
     render(<App />);
 
@@ -277,8 +275,7 @@ describe('App 스모크', () => {
   });
 
   /**
-   * 전역 모드 토글은 2026-08-24 에 제거됐다. 헤더에는 제목과 "새 정산" 만 남는다.
-   * 회귀로 다시 들어오는 걸 막기 위해 부재를 고정한다.
+   * 정산/내기는 판마다 고르므로 헤더에 전역 토글이 없다. 다시 들어오지 않도록 부재를 고정한다.
    */
   it('헤더에 전역 정산/내기 토글이 없다', async () => {
     const user = userEvent.setup();
@@ -320,7 +317,7 @@ describe('App 스모크', () => {
    * ResultCard 의 두 prop 이 기본값(0 / [])을 갖기 때문에 배선이 끊겨도 조용히 통과한다 —
    * F1 의 원래 결함이 정확히 그 형태였다. 그래서 배선을 여기서 따로 고정한다.
    */
-  it('F1: 올림 초과분이 생기면 결과 카드에 실제로 표시된다', async () => {
+  it('올림 초과분이 생기면 결과 카드에 실제로 표시된다', async () => {
     const user = userEvent.setup();
     render(<App />);
 
@@ -350,7 +347,7 @@ describe('App 스모크', () => {
    * 항목이 통째로 빈다 — 그 경로로는 더 이상 미청구 금액이 남지 않는다.
    * 그래서 여기서는 calc 가 실제로 걸러내는 상태(모르는 id 앞으로 남은 금액)를 직접 만든다.
    */
-  it('F3: 아무에게도 청구되지 않는 기타비용은 결과 카드에 경고로 뜬다', async () => {
+  it('아무에게도 청구되지 않는 기타비용은 결과 카드에 경고로 뜬다', async () => {
     const user = userEvent.setup();
     render(<App />);
 

@@ -17,8 +17,7 @@ describe('roundTo — 1원 단위 올림', () => {
     expect(roundTo(3333.9999)).toBe(3334);
   });
 
-  it("B4(교체): 음수는 부호 대칭이 아니라 0 쪽으로 올린다 — Math.ceil 방향", () => {
-    // 이전 roundTo(-3350, 100) 은 -3400 이었다. 지금은 0 쪽으로 붙는다.
+  it("음수는 부호 대칭이 아니라 0 쪽으로 올린다 — Math.ceil 방향", () => {
     expect(roundTo(-2440.5)).toBe(-2440);
     expect(roundTo(-2440.9)).toBe(-2440);
     expect(roundTo(-0.5)).toBe(-0);
@@ -26,7 +25,7 @@ describe('roundTo — 1원 단위 올림', () => {
     expect(roundTo(-9000.5)).toBeGreaterThan(-9000.5);
   });
 
-  it('B5\': 어떤 입력에도 정수를 돌려준다', () => {
+  it('어떤 입력에도 정수를 돌려준다', () => {
     for (const x of [0, 1, -1, 0.1, -0.1, 1234.5678, -1234.5678, 1e-12, -1e-12]) {
       expect(Number.isInteger(roundTo(x))).toBe(true);
     }
@@ -34,11 +33,10 @@ describe('roundTo — 1원 단위 올림', () => {
 });
 
 describe('splitEvenly — 전원이 정확히 같은 금액을 낸다', () => {
-  it('E1: 나누어떨어지지 않아도 전원이 같은 정수 금액을 낸다 (8,000 / 3명)', () => {
-    // 8,000원을 3명이 나누면 2,666.666… 을 올려 **전원 2,667** 이다.
-    // 이전 정책은 2,667 / 2,667 / 2,666 으로 합계를 8,000 에 맞췄지만, 볼링 모임에서
-    // "왜 쟤만 1원 덜 내" 가 나오는 쪽이 1~2원 더 걷히는 쪽보다 나쁘다고 판단해
-    // 2026-08-21 에 전원 동일로 바꿨다. 초과 1원은 CalcResult.roundingSurplus 로 드러난다.
+  it('나누어떨어지지 않아도 전원이 같은 정수 금액을 낸다 (8,000 / 3명)', () => {
+    // 8,000원을 3명이 나누면 2,666.666… 을 올려 전원 2,667 이다. 합계를 8,000 에 맞추려고
+    // 한 명만 2,666 을 내게 하면 볼링 모임에서 "왜 쟤만 1원 덜 내" 가 나오는데, 그게 1~2원
+    // 더 걷히는 쪽보다 나쁘다. 초과 1원은 CalcResult.roundingSurplus 로 드러난다.
     expect(splitEvenly(8000, 3)).toEqual([2667, 2667, 2667]);
     expect(splitEvenly(8000, 3).every(Number.isInteger)).toBe(true);
     // 합계는 total 이상이고, 초과분은 정확히 1원이다 (인원수 3 미만)
@@ -46,9 +44,9 @@ describe('splitEvenly — 전원이 정확히 같은 금액을 낸다', () => {
     expect(sum(splitEvenly(8000, 3)) - 8000).toBe(1);
   });
 
-  it('E1: 어떤 조합에서도 모든 몫이 서로 완전히 같다 (이번 정책 변경의 핵심)', () => {
-    // 이 검사가 새 정책을 지키는 유일한 방어선이다. "사람 간 차이 <= 1원" 으로 느슨하게 두면
-    // 옛 구현(한 명만 1원 덜 냄)이 그대로 통과하므로, 반드시 완전 동일성으로 조여 둔다.
+  it('어떤 조합에서도 모든 몫이 서로 완전히 같다 (전원 동일 분배의 핵심)', () => {
+    // 이 검사가 전원 동일 분배를 지키는 유일한 방어선이다. "사람 간 차이 <= 1원" 으로 느슨하게
+    // 두면 한 명만 1원 덜 내는 구현도 통과하므로, 반드시 완전 동일성으로 조여 둔다.
     let uneven = 0;
     for (let total = 0; total <= 200; total += 7) {
       for (let count = 1; count <= 9; count++) {
@@ -62,7 +60,7 @@ describe('splitEvenly — 전원이 정확히 같은 금액을 낸다', () => {
     expect(uneven).toBe(151);
   });
 
-  it('E2: 초과분은 정확히 ceil(total/count)*count - total 이고 항상 인원수 미만이다', () => {
+  it('초과분은 정확히 ceil(total/count)*count - total 이고 항상 인원수 미만이다', () => {
     let withSurplus = 0;
     for (let total = 0; total <= 200; total += 7) {
       for (let count = 1; count <= 9; count++) {
@@ -124,7 +122,7 @@ describe('splitEvenly — 전원이 정확히 같은 금액을 낸다', () => {
 });
 
 describe('distributeWithRemainder — 1원 올림 + 초과분 흡수', () => {
-  it("B1': Σ subtotal 이 정수면 각자 rounded 가 정수이고 Σ rounded === Σ subtotal", () => {
+  it("Σ subtotal 이 정수면 각자 rounded 가 정수이고 Σ rounded === Σ subtotal", () => {
     const subtotals = { a: 100.5, b: 100.5, c: 99 }; // Σ = 300
     const out = distributeWithRemainder(subtotals);
 
@@ -136,7 +134,7 @@ describe('distributeWithRemainder — 1원 올림 + 초과분 흡수', () => {
     expect(out.a.rounded).toBe(100);
   });
 
-  it("B2': 흡수자를 제외한 전원의 rounded >= subtotal (올림 방향 보장)", () => {
+  it("흡수자를 제외한 전원의 rounded >= subtotal (올림 방향 보장)", () => {
     const subtotals = { a: 100.5, b: 100.5, c: 99 };
     const out = distributeWithRemainder(subtotals);
     for (const id of ['b', 'c']) {
@@ -144,7 +142,7 @@ describe('distributeWithRemainder — 1원 올림 + 초과분 흡수', () => {
     }
   });
 
-  it("B5': 흡수자 행과 음수 행을 포함해 모든 rounded 가 정수다", () => {
+  it("흡수자 행과 음수 행을 포함해 모든 rounded 가 정수다", () => {
     const cases: Record<string, number>[] = [
       { a: 6667, b: 6667, c: 6666 },
       { a: -9000, b: 6000, c: 3000 },
@@ -160,8 +158,8 @@ describe('distributeWithRemainder — 1원 올림 + 초과분 흡수', () => {
     }
   });
 
-  it("B5': 부동소수 잔여가 흡수자 행에 새지 않는다 (Math.round 스냅)", () => {
-    // reviewer 실측 사례: 6명이 13,000원을 나눠 가지면 Σ subtotal 에 1.8e-12 급 잔여가 남는다.
+  it("부동소수 잔여가 흡수자 행에 새지 않는다 (Math.round 스냅)", () => {
+    // 6명이 13,000원을 나눠 가지면 Σ subtotal 에 1.8e-12 급 잔여가 남는다.
     // 스냅이 없으면 흡수자 행이 2166.9999999999982 같은 비정수가 되고,
     // "잔돈 조정 +0원" 배지가 공유 이미지에 박힌다.
     for (const [count, amount] of [
@@ -186,7 +184,7 @@ describe('distributeWithRemainder — 1원 올림 + 초과분 흡수', () => {
     }
   });
 
-  it("B6': 표시 문자열 어디에도 소수점이 없다", () => {
+  it("표시 문자열 어디에도 소수점이 없다", () => {
     const subtotals = { a: 6667, b: 6667, c: 6666, d: -9000 };
     const out = distributeWithRemainder(subtotals);
     for (const share of Object.values(out)) {
@@ -195,8 +193,7 @@ describe('distributeWithRemainder — 1원 올림 + 초과분 흡수', () => {
     }
   });
 
-  // 총무 지정은 2026-08-21 에 제거됐다. 흡수자는 항상 최대 부담자다.
-  it('B3: 최대 부담자가 초과분을 흡수한다', () => {
+  it('최대 부담자가 초과분을 흡수한다', () => {
     const subtotals = { small: 10.5, big: 1000.5, mid: 100 }; // Σ = 1111
     const out = distributeWithRemainder(subtotals);
     expect(out.small.rounded).toBe(11);
@@ -205,7 +202,7 @@ describe('distributeWithRemainder — 1원 올림 + 초과분 흡수', () => {
     expect(sum(Object.values(out).map((x) => x.rounded))).toBe(1111);
   });
 
-  it('B3: 정수 subtotal 만 있으면 조정이 전혀 일어나지 않는다 (배지가 뜨지 않아야 한다)', () => {
+  it('정수 subtotal 만 있으면 조정이 전혀 일어나지 않는다 (배지가 뜨지 않아야 한다)', () => {
     const subtotals = { a: 6667, b: 6667, c: 6666 };
     const out = distributeWithRemainder(subtotals);
     for (const share of Object.values(out)) {
@@ -215,7 +212,7 @@ describe('distributeWithRemainder — 1원 올림 + 초과분 흡수', () => {
     expect(sum(Object.values(out).map((x) => x.rounded))).toBe(20000);
   });
 
-  it('B4: 음수 최종 금액(받을 사람)도 정상 동작한다', () => {
+  it('음수 최종 금액(받을 사람)도 정상 동작한다', () => {
     const subtotals = { a: -2400, b: 6000, c: 4000 };
     const out = distributeWithRemainder(subtotals);
     expect(out.a.rounded).toBe(-2400);

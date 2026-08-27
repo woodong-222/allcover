@@ -58,7 +58,7 @@ describe('ResultCard', () => {
     expect(screen.getByText(/3명/)).toBeInTheDocument();
   });
 
-  it('D5: 루트 카드 폭은 540px 고정이다', () => {
+  it('루트 카드 폭은 540px 고정이다', () => {
     const members = makeMembers(2);
     const settlement = makeSettlement({ members });
     render(
@@ -72,7 +72,7 @@ describe('ResultCard', () => {
     expect(card.style.width).toBe('540px');
   });
 
-  it('D5: 멤버 12명까지 잘림 없이 모든 행이 렌더된다', () => {
+  it('멤버 12명까지 잘림 없이 모든 행이 렌더된다', () => {
     const members = makeMembers(12);
     const settlement = makeSettlement({ members });
     render(
@@ -85,7 +85,7 @@ describe('ResultCard', () => {
     expect(screen.getAllByTestId('result-row')).toHaveLength(12);
   });
 
-  it('R9: 멤버 13명이면 표에 축소 스타일이 적용된다', () => {
+  it('멤버 13명이면 표에 축소 스타일이 적용된다', () => {
     const members = makeMembers(13);
     const settlement = makeSettlement({ members });
     render(
@@ -114,7 +114,7 @@ describe('ResultCard', () => {
     expect(table.dataset.compact).toBe('false');
   });
 
-  it('B3: adjustment가 0이 아니면 잔돈 조정 배지를 표시한다', () => {
+  it('adjustment가 0이 아니면 잔돈 조정 배지를 표시한다', () => {
     const members = makeMembers(1);
     const settlement = makeSettlement({ members });
     render(
@@ -127,7 +127,7 @@ describe('ResultCard', () => {
     expect(screen.getByTestId('adjustment-badge')).toHaveTextContent('잔돈 조정 -100원');
   });
 
-  it('rounded가 음수면 "받음"으로 표기한다 (B4)', () => {
+  it('rounded가 음수면 "받음"으로 표기한다', () => {
     const members = makeMembers(1);
     const settlement = makeSettlement({ members });
     render(
@@ -231,7 +231,7 @@ describe('ResultCard', () => {
     expect(hint).toHaveTextContent('참여 인원을 바꾸면 판돈 총액이 달라지므로');
   });
 
-  it('D7: pot 방식 라운드 요약에 방식·판돈·순위가 한 줄로 포함된다', () => {
+  it('pot 방식 라운드 요약에 방식·판돈·순위가 한 줄로 포함된다', () => {
     const members = makeMembers(2);
     const rounds: Round[] = [
       {
@@ -262,7 +262,7 @@ describe('ResultCard', () => {
     expect(row).toHaveTextContent('1등 멤버1');
   });
 
-  it('D7: transfer 방식 라운드 요약에 방식·금액·진 쪽이 포함된다', () => {
+  it('transfer 방식 라운드 요약에 방식·금액·진 쪽이 포함된다', () => {
     const members = makeMembers(2);
     const rounds: Round[] = [
       {
@@ -293,10 +293,10 @@ describe('ResultCard', () => {
   });
 
   /**
-   * G4: 내기 표시는 `rounds` 에서 파생한다 (2026-08-24). 전역 `mode` 플래그가 없어졌으므로
-   * "판이 하나라도 내기면 보여주고, 전부 정산이면 숨긴다".
+   * 내기 표시는 `rounds` 에서 파생한다 — 판이 하나라도 내기면 보여주고,
+   * 전부 정산이면 숨긴다.
    */
-  describe('G4: 전 판이 정산이면 내기 표시를 숨긴다', () => {
+  describe('전 판이 정산이면 내기 표시를 숨긴다', () => {
     function betRound(): Round {
       return {
         id: 'r1',
@@ -333,7 +333,7 @@ describe('ResultCard', () => {
       expect(screen.queryByText('내기±')).not.toBeInTheDocument();
     });
 
-    it('전 판이 none 이면 판별 내기 요약(D7)이 없다', () => {
+    it('전 판이 none 이면 판별 내기 요약이 없다', () => {
       const members = makeMembers(2);
       const settlement = makeSettlement({ members, rounds: [settleRound('r1')] });
       render(
@@ -431,7 +431,7 @@ describe('ResultCard', () => {
     });
   });
 
-  it('R1: 카드 배경/글자색이 hex CSS 변수(var(--card-*))로만 지정된다', () => {
+  it('카드 배경/글자색이 hex CSS 변수(var(--card-*))로만 지정된다', () => {
     const ref = createRef<HTMLDivElement>();
     const members = makeMembers(1);
     const settlement = makeSettlement({ members });
@@ -444,7 +444,7 @@ describe('ResultCard', () => {
     expect(ref.current).toBe(card);
   });
 
-  it('R1 회귀 방지: 서브트리 어디에도 Tailwind 색상 유틸리티 클래스가 없다', () => {
+  it('회귀 방지: 서브트리 어디에도 Tailwind 색상 유틸리티 클래스가 없다', () => {
     const members = makeMembers(2);
     const rounds: Round[] = [
       {
@@ -492,10 +492,8 @@ describe('ResultCard', () => {
 });
 
 // ---------------------------------------------------------------------------
-// F1 / F3 — 엔진이 계산한 경고가 실제로 화면에 도달하는지
-//
-// 이 두 블록은 한때 테스트가 0건이었다. 통째로 지워도 전체 스위트가 통과했는데,
-// 그게 정확히 F1 의 원래 결함("엔진은 계산하는데 화면에 안 나온다")과 같은 구멍이다.
+// 엔진이 계산한 경고가 실제로 화면에 도달하는지 검증한다.
+// 값을 옳게 계산해도 화면에 렌더되지 않으면 사용자는 아무것도 모른다.
 // ---------------------------------------------------------------------------
 /** settlement/results 까지 갖춘 완전한 props. 경고 블록만 바꿔가며 렌더할 때 쓴다. */
 function warningProps() {
@@ -507,7 +505,7 @@ function warningProps() {
   };
 }
 
-describe('ResultCard — 올림 초과분 표시 (F1)', () => {
+describe('ResultCard — 올림 초과분 표시', () => {
   it('초과분이 있으면 총액 아래에 금액과 함께 안내가 뜬다', () => {
     render(<ResultCard {...warningProps()} roundingSurplus={2} />);
     const note = screen.getByTestId('rounding-surplus-note');
@@ -526,7 +524,7 @@ describe('ResultCard — 올림 초과분 표시 (F1)', () => {
   });
 });
 
-describe('ResultCard — 분담 대상 없는 기타비용 경고 (F3)', () => {
+describe('ResultCard — 분담 대상 없는 기타비용 경고', () => {
   it('미수금 항목이 있으면 항목명과 금액이 경고에 나온다', () => {
     render(
       <ResultCard
@@ -563,11 +561,10 @@ describe('ResultCard — 분담 대상 없는 기타비용 경고 (F3)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 기타비용을 항목명 열로 펼치기 (2026-08-25)
+// 기타비용을 항목명 열로 펼치기
 //
-// 예전에는 항목이 몇 개든 "기타" 한 열에 합계만 찍혀서, 카드를 받은 사람이 그 돈이
-// 무엇 때문인지 알 수 없었다. Extra.amounts 가 사람별 금액 맵이므로 항목별·사람별
-// 금액을 그대로 표에 펼칠 수 있다.
+// "기타" 한 열에 합계만 찍으면 카드를 받은 사람이 그 돈이 무엇 때문인지 알 수 없다.
+// Extra.amounts 가 사람별 금액 맵이므로 항목별·사람별 금액을 그대로 표에 펼친다.
 // ---------------------------------------------------------------------------
 
 function makeExtra(id: string, label: string, amounts: Record<string, number>): Extra {
@@ -634,7 +631,7 @@ describe('extraColumns — 항목을 열로 펼치는 규칙', () => {
 
 describe('cardWidth — 열 수에 따른 카드 폭', () => {
   it('기타 열이 없거나 하나면 기본 540px 그대로다', () => {
-    // 기존 540px 표에 이미 "기타" 열 하나가 들어가 있었으므로 첫 열은 넓히지 않는다.
+    // 기본 540px 표에 이미 열 하나가 들어갈 자리가 있으므로 첫 열은 넓히지 않는다.
     expect(cardWidth(0)).toBe(540);
     expect(cardWidth(1)).toBe(540);
   });

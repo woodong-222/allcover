@@ -92,7 +92,7 @@ describe('RankPicker', () => {
     expect(useSettlementStore.getState().settlement.rounds[0].ranking).toEqual([['a'], ['c']]);
   });
 
-  it('R5: 탭하지 않은 참여자는 무배당 라벨로 상태가 항상 보인다', async () => {
+  it('탭하지 않은 참여자는 무배당 라벨로 상태가 항상 보인다', async () => {
     const user = userEvent.setup();
     render(<Harness />);
 
@@ -117,7 +117,7 @@ describe('RankPicker', () => {
     expect(useSettlementStore.getState().settlement.rounds[0].ranking).toEqual([['c', 'd']]);
   });
 
-  it('E1/E2: 칩 목록은 flex-wrap이고 각 칩은 44px 히트 영역을 갖는다', () => {
+  it('칩 목록은 flex-wrap이고 각 칩은 44px 히트 영역을 갖는다', () => {
     render(<Harness />);
     const button = chip('가나');
     expect(button.className).toMatch(/min-h-\[44px\]/);

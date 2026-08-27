@@ -71,7 +71,7 @@ describe('RoundList', () => {
     expect(screen.queryByRole('heading', { name: '2판' })).not.toBeInTheDocument();
   });
 
-  it('E2: 판 추가 버튼이 44px 히트 영역을 갖는다', () => {
+  it('판 추가 버튼이 44px 히트 영역을 갖는다', () => {
     render(<RoundList />);
     const button = screen.getByRole('button', { name: '판 추가' });
     expect(button.className).toMatch(/min-h-\[44px\]/);

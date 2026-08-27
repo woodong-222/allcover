@@ -1,11 +1,10 @@
 /**
  * 접근성 전용 테스트 — 실제 키보드 Tab 순회 검증.
- * 계획서: .omc/plans/2026-08-21-allcover-bowling-settlement.md §3 인수조건 E4
  *
- * E4: "키보드 Tab만으로 멤버 추가 → 판 입력 → 결과 확인까지 도달 가능"
+ * "키보드 Tab만으로 멤버 추가 → 판 입력 → 결과 확인까지 도달 가능"을 확인한다.
  *
  * 각 컴포넌트 단위 테스트의 `getByLabelText` 검증은 label↔input 연결이라는
- * *전제조건*만 확인할 뿐, 실제 Tab 순회가 되는지는 보지 않는다. 이 파일은
+ * 전제조건만 확인할 뿐, 실제 Tab 순회가 되는지는 보지 않는다. 이 파일은
  * App 전체를 렌더해 `user.tab()`으로 실제 순회를 밟는다.
  *
  * html-to-image 는 jsdom에서 실제 캡처가 불가능하므로 src/App.test.tsx와 동일하게 모킹한다.
@@ -46,7 +45,7 @@ async function tabUntil(
   );
 }
 
-describe('a11y: 키보드 Tab 순회 (E4)', () => {
+describe('a11y: 키보드 Tab 순회', () => {
   it('Tab만으로 멤버 이름 입력에 도달해 Enter로 멤버를 추가할 수 있다', async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -63,15 +62,14 @@ describe('a11y: 키보드 Tab 순회 (E4)', () => {
     const user = userEvent.setup();
     render(<App />);
 
-    // 화면 순서(§4 M3): 멤버 → 요금 → 판. "기본 판돈"·"총무"는 types.ts에서 완전히
-    // 삭제된 필드라(2026-08-21) FeeSettings에 더 이상 렌더되지 않는다 — 이 걷기 대상에서 뺐다.
+    // 화면 순서는 멤버 → 요금 → 판이다.
     await tabUntil(user, () => screen.getByLabelText('멤버 이름'));
     await tabUntil(user, () => screen.getByLabelText('게임 단가'));
     await tabUntil(user, () => screen.getByLabelText('신발비'));
     await tabUntil(user, () => screen.getByRole('button', { name: '판 추가' }));
 
     // 판을 추가하면 아직 참여자가 없는 판이 만들어지는데, 이는 판 결과 계산 자체를 막지 않는다
-    // (calc.ts A9: 참여자 0명 라운드는 betDelta 전원 0). "결과 확인까지 도달 가능"은
+    // (calc.ts에서 참여자 0명 라운드는 betDelta 전원 0). "결과 확인까지 도달 가능"은
     // 멤버 추가 → 결과 카드 렌더까지 배선이 끊기지 않았는지로 확인한다 (App.test.tsx가 이미 검증).
     expect(screen.getByRole('button', { name: '판 추가' })).toBe(document.activeElement);
   });

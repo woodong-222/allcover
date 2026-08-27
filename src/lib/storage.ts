@@ -1,9 +1,8 @@
 /**
  * localStorage 안전 래퍼.
- * 계획서: .omc/plans/2026-08-21-allcover-bowling-settlement.md §3 인수조건 C4
  *
- * 사파리 프라이빗 모드(getItem/setItem이 throw)나 quota 초과 상황에서도
- * 앱이 죽지 않도록, 접근 자체가 실패하면 in-memory Map으로 조용히 전환한다.
+ * 사파리 프라이빗 모드(getItem/setItem이 throw)나 quota 초과 상황에서도 앱이 죽지 않도록,
+ * 접근 자체가 실패하면 in-memory Map 으로 조용히 전환한다.
  */
 
 import type { StateStorage } from 'zustand/middleware';
@@ -15,8 +14,8 @@ const memoryFallback = new Map<string, string>();
  * 마지막으로 확인된 저장 가능 여부. `null` 은 아직 한 번도 확인하지 않았다는 뜻이다.
  *
  * 마운트 시점에 한 번만 판정하면 사파리 프라이빗 모드(처음부터 throw)는 잡히지만
- * **quota 초과는 세션 중간에 발생하므로 영영 감지되지 않는다.** 그래서 실제 쓰기가
- * 실패하는 순간 이 값을 뒤집고 구독자에게 알린다.
+ * quota 초과는 세션 중간에 발생하므로 영영 감지되지 않는다. 그래서 실제 쓰기가 실패하는
+ * 순간 이 값을 뒤집고 구독자에게 알린다.
  */
 let persistenceOk: boolean | null = null;
 

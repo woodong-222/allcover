@@ -1,7 +1,4 @@
-/**
- * 표시용 포맷 유틸.
- * 계획서: .omc/plans/2026-08-21-allcover-bowling-settlement.md §3 인수조건 D
- */
+/** 표시용 포맷 유틸. */
 
 const KRW_FORMATTER = new Intl.NumberFormat('ko-KR');
 

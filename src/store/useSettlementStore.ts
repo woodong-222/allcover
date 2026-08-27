@@ -1,7 +1,6 @@
 /**
- * 진행 중인 정산 세션 상태. localStorage에 `allcover:session:v1` 키로 저장한다 (C2).
- * 요금 프리셋·최근 멤버 이름은 [[usePrefsStore]]가 별도로 저장한다 (C1, C5).
- * 계획서: .omc/plans/2026-08-21-allcover-bowling-settlement.md §2, §3 인수조건 C
+ * 진행 중인 정산 세션 상태. localStorage 에 `allcover:session:v1` 키로 저장한다.
+ * 요금 프리셋과 최근 멤버 이름은 usePrefsStore 가 별도로 저장한다.
  */
 
 import { nanoid } from 'nanoid';
@@ -14,11 +13,11 @@ import { initialPrefs, usePrefsStore, type PrefsFees } from './usePrefsStore';
 
 const STORAGE_KEY = 'allcover:session:v1';
 /**
- * v2: `roundingUnit` 삭제(1원 올림으로 고정, 계획서 §5-A-1), `mode` 추가(§5-A-2).
- * v3: `mode` 삭제, `Extra.amount`/`Extra.splitAmong` -> `Extra.amounts` (2026-08-24).
+ * v2 는 `roundingUnit` 을 빼고(1원 올림으로 고정) `mode` 를 더했고,
+ * v3 는 `mode` 를 빼고 `Extra.amount`/`Extra.splitAmong` 을 `Extra.amounts` 로 바꿨다.
  *
- * 어느 단계도 버전만 올리고 초기화하지 않는다 — 진행 중인 정산이 통째로 날아간다 (§5-A-3).
- * "그 외 알 수 없는 버전"만 백업 후 초기화한다.
+ * 어느 단계도 버전만 올리고 초기화하지 않는다. 그러면 진행 중인 정산이 통째로 날아간다.
+ * 알 수 없는 버전만 백업 후 초기화한다.
  */
 const CURRENT_VERSION = 3;
 
@@ -42,9 +41,9 @@ function createEmptySettlement(prefs: PrefsFees): Settlement {
  * 여기서 걸러내지 않으면 `{ settlement: null }` 같은 값이 그대로 들어가 계산 단계에서 크래시한다.
  *
  * `extras[].amounts`까지 보는 이유: `calc.ts`가 `Object.entries(item.amounts)`를 도는데
- * v3 버전 딱지를 달고 옛 모양(`amount`/`splitAmong`)이 들어오면 렌더 중 TypeError로 죽는다.
- * 단 그 검사는 **현재 버전일 때만** 한다 — 옛 버전 값은 옛 모양인 게 정상이고, 여기서
- * 걸러버리면 마이그레이션이 돌기도 전에 진행 중인 정산이 초기화된다.
+ * 현재 버전 딱지를 달고 옛 모양(`amount`/`splitAmong`)이 들어오면 렌더 중 TypeError로 죽는다.
+ * 단 그 검사는 현재 버전일 때만 한다. 옛 버전 값은 옛 모양인 게 정상이고, 여기서 걸러버리면
+ * 마이그레이션이 돌기도 전에 진행 중인 정산이 초기화된다.
  */
 function isValidSettlementState(state: unknown, version: number): boolean {
   if (typeof state !== 'object' || state === null) return false;
@@ -63,16 +62,17 @@ function isValidSettlementState(state: unknown, version: number): boolean {
 }
 
 /**
- * 입력 경계에서 금액을 정수 원 단위로 강제한다 (계획서 §5-A-1 "결정 C").
+ * 입력 경계에서 금액을 정수 원 단위로 강제한다.
  *
- * **`money.roundTo`(Math.ceil, 계산 출력 반올림 정책)와는 의도적으로 다르다** — 절대 통일하지 마라.
- * - 여기(입력 정규화)는 `Math.round`: 사용자가 친 값에 가장 가까운 정수를 잡는다. `4000.4` -> `4000`.
- * - `money.roundTo`(계산 출력)는 `Math.ceil` 1원 올림: 총액 보존을 위해 항상 위로만 올린다.
- * 입력을 여기서 정수로 못박아 두면 `subtotal`이 이미 전부 정수라 `roundTo`는 사실상 방어용 no-op으로만
- * 남는다 — 진짜 목적(소수점 없는 화면)은 이 경계에서 달성된다.
+ * 계산 출력을 반올림하는 `money.roundTo` 와 방식이 의도적으로 다르니 통일하지 마라.
+ * - 입력 정규화인 여기는 `Math.round`. 사용자가 친 값에 가장 가까운 정수를 잡는다. `4000.4` -> `4000`.
+ * - 계산 출력인 `money.roundTo` 는 `Math.ceil` 1원 올림. 총액 보존을 위해 항상 위로만 올린다.
  *
- * `NumberField`가 UI 레이어에서도 이미 정수화하지만, 테스트/마이그레이션은 UI를 우회해
- * 스토어에 직접 값을 넣으므로 **여기가 진짜 경계**다.
+ * 입력을 여기서 정수로 못박아 두면 `subtotal` 이 이미 전부 정수라 `roundTo` 는 사실상 방어용
+ * no-op 으로만 남는다. 소수점 없는 화면이라는 진짜 목적은 이 경계에서 달성된다.
+ *
+ * `NumberField` 가 UI 레이어에서도 이미 정수화하지만, 테스트와 마이그레이션은 UI를 우회해
+ * 스토어에 직접 값을 넣으므로 여기가 진짜 경계다.
  */
 function toWon(n: number): number {
   return Number.isFinite(n) ? Math.round(n) : 0;
@@ -81,7 +81,7 @@ function toWon(n: number): number {
 /**
  * 기타비용의 사람별 금액 맵을 정규화한다.
  *
- * 정수화(`toWon`)한 뒤 **0 이하는 키째로 버린다.** 0원인 사람은 그 항목을 안 먹은 것이고,
+ * 정수화(`toWon`)한 뒤 0 이하는 키째로 버린다. 0원인 사람은 그 항목을 안 먹은 것이고,
  * 안 먹은 사람을 굳이 저장할 이유가 없다. 음수·NaN·Infinity도 같은 규칙으로 사라진다
  * (`toWon`이 비유한값을 0으로 눕힌다). 덕분에 "키가 있으면 청구 대상"이 불변식이 되어
  * `calc.ts`의 미수금(unassignedExtras) 판정이 단순해진다.
@@ -146,7 +146,7 @@ type SettlementState = {
   removeExtra: (extraId: string) => void;
   setFees: (fees: Partial<PrefsFees>) => void;
 
-  /** 세션만 초기화. 요금 프리셋·최근 멤버 이름은 유지된다 (C5) */
+  /** 세션만 초기화. 요금 프리셋과 최근 멤버 이름은 유지된다 */
   resetSession: () => void;
 };
 
@@ -207,16 +207,15 @@ export const useSettlementStore = create<SettlementState>()(
         set((state) => {
           const settlement = state.settlement;
           const last = settlement.rounds[settlement.rounds.length - 1];
-          // 새 판은 언제나 직전 판의 구성을 상속한다. 전역 정산/내기 모드가 사라지면서
-          // (2026-08-24) "정산 모드에서는 내기 필드를 상속하지 않는다"는 분기도 함께 사라졌다.
-          // 이 판이 내기인지 아닌지는 이제 Round.method 하나가 말하므로, method 를 상속하면
-          // 정산만 하는 모임은 'none' 이 계속 이어지고 내기 모임은 판돈이 계속 이어진다.
+          // 새 판은 언제나 직전 판의 구성을 상속한다. 이 판이 내기인지 아닌지는 Round.method
+          // 하나가 말하므로, method 를 상속하면 정산만 하는 모임은 'none' 이 계속 이어지고
+          // 내기 모임은 판돈이 계속 이어진다.
           const newRound: Round = {
             id: nanoid(),
             participants: last ? [...last.participants] : settlement.members.map((m) => m.id),
             teams: last ? (last.teams ? last.teams.map((t) => [...t]) : null) : null,
             method: last ? last.method : 'none',
-            // 첫 판의 ante는 0에서 시작해 사용자가 그 판에서 직접 입력한다 (defaultAnte 제거, 2026-08-21)
+            // 첫 판의 ante 는 0에서 시작해 사용자가 그 판에서 직접 입력한다
             ante: last ? last.ante : 0,
             payout: last ? [...last.payout] : [],
             ranking: [],
@@ -234,7 +233,7 @@ export const useSettlementStore = create<SettlementState>()(
           const idx = rounds.findIndex((r) => r.id === roundId);
           if (idx === -1) return state;
           const original = rounds[idx];
-          // "복제"는 말 그대로 그 판을 통째로 복사한다. 배열은 새로 떠서 원본과 공유하지 않는다.
+          // 배열은 새로 떠서 원본과 공유하지 않는다.
           const copy: Round = {
             ...original,
             id: nanoid(),
@@ -420,7 +419,7 @@ export const useSettlementStore = create<SettlementState>()(
       resetSession: () => {
         const prefs = usePrefsStore.getState();
         // 손상 백업에는 이전 세션의 멤버 실명과 금액이 통째로 들어 있다. "새 정산" 은
-        // 사용자에게 "지웠다" 는 뜻이므로 그 사본도 함께 지운다 (보안 검토 LOW).
+        // 사용자에게 지웠다는 뜻이므로 그 사본도 함께 지운다.
         clearCorruptBackups();
         set({ settlement: createEmptySettlement(prefs) });
       },
@@ -450,7 +449,7 @@ export const useSettlementStore = create<SettlementState>()(
             const v2 = version === 1 ? migrateV1toV2(stored) : stored;
             return { settlement: migrateV2toV3(v2) };
           }
-          // 그 외 알 수 없는 버전은 손상으로 취급해 백업 후 초기화한다 (기존 C3 동작 유지)
+          // 그 외 알 수 없는 버전은 손상으로 취급해 백업 후 초기화한다
           backupCorruptState(persistedState, version);
           return { settlement: createEmptySettlement(usePrefsStore.getState()) };
         } catch {
@@ -494,15 +493,15 @@ type V2Extra = {
 /**
  * v2 기타비용 하나를 사람별 금액 맵으로 편다.
  *
- * 분담 대상은 `splitAmong === 'all'`이면 전 멤버, 배열이면 그중 **실제로 남아 있는 멤버**다
+ * 분담 대상은 `splitAmong === 'all'`이면 전 멤버, 배열이면 그중 실제로 남아 있는 멤버다
  * (이미 삭제된 멤버 id가 남아 있을 수 있다). 대상이 하나도 없으면 빈 맵을 돌려준다.
  *
- * **알려진 한계**: 그 경우 v2가 들고 있던 금액은 얹을 키가 없어 사라지고, `calc.ts`의
+ * 알려진 한계: 그 경우 v2가 들고 있던 금액은 얹을 키가 없어 사라지고, `calc.ts`의
  * 미수금(unassignedExtras) 경고에도 잡히지 않는다(합계가 0이면 보고하지 않는다).
- * v3 스키마에는 주인 없는 금액을 담을 자리가 없다 — 되살리려면 스키마 쪽 결정이 필요하다.
+ * v3 스키마에는 주인 없는 금액을 담을 자리가 없어서, 되살리려면 스키마부터 손봐야 한다.
  *
- * 분배는 반드시 [[splitEvenly]]를 쓴다. 이 앱의 분배 규칙은 "전원이 같은 금액"이고
- * (합계가 최대 인원-1원 커진다), 여기서만 다른 규칙을 쓰면 마이그레이션 전후로 청구액이 달라진다.
+ * 분배는 반드시 `splitEvenly`를 쓴다. 이 앱의 분배 규칙은 전원이 같은 금액을 내는 것이라
+ * (합계가 최대 인원-1원 커진다) 여기서만 다른 규칙을 쓰면 마이그레이션 전후로 청구액이 달라진다.
  */
 function extraAmountsFromV2(extra: V2Extra, memberIds: string[]): Record<string, number> {
   const targets =
@@ -524,7 +523,7 @@ function extraAmountsFromV2(extra: V2Extra, memberIds: string[]): Record<string,
 }
 
 /**
- * v2 -> v3: `mode` 삭제 + 기타비용을 사람별 금액 맵으로 전환한다 (2026-08-24).
+ * v2 -> v3: `mode` 삭제 + 기타비용을 사람별 금액 맵으로 전환한다.
  * members/rounds/요금 등 나머지는 전부 보존한다.
  */
 function migrateV2toV3(v2: Record<string, unknown>): Settlement {

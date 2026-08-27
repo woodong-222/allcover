@@ -1,21 +1,15 @@
 /**
  * 기타 비용 항목 추가/삭제 + 사람별 금액 지정.
- * 계획서: .omc/plans/2026-08-21-allcover-bowling-settlement.md §3 인수조건 E1, E2, E3, E4 / §4 M3
  *
- * `Extra` 가 사람별 금액 맵(`amounts`)으로 바뀌면서(2026-08-24) 이 화면의 역할도 바뀌었다.
- * "총액 + 분담 대상" 은 이제 **균등 금액을 계산하는 도구**일 뿐이고, 저장되는 것은 언제나
- * memberId -> 금액 맵이다. 균등 분배는 같은 값을 채워 넣은 특수한 경우다.
- *
- * 그래서 "개별 금액 입력" 토글은 별도 저장 모드가 아니라 **입력 편의**에 불과하다.
- * 꺼져 있으면 전원 같은 금액, 켜면 사람별로 고친 금액이 그대로 들어간다.
+ * 저장되는 값은 언제나 memberId -> 금액 맵이다. "총액 + 분담 대상"은 균등 금액을 계산하는
+ * 도구일 뿐이고, 균등 분배는 전원에게 같은 값을 채워 넣은 특수한 경우다. "개별 금액 입력"
+ * 토글도 별도 저장 모드가 아니라 입력 편의다.
  *
  * 개별 금액은 `overrides`(사용자가 실제로 고친 사람만)로 들고, 안 고친 사람은 균등 금액을
  * 그대로 따라간다. 스냅샷을 떠서 들고 있으면 총액이나 분담 대상을 나중에 바꿨을 때
  * 화면의 숫자가 총액과 어긋난 채 굳어버린다.
  *
- * 기타 비용은 있을 수도 없을 수도 있는 선택 항목이라 `CollapsibleSection`(네이티브
- * `<details>`/`<summary>`)으로 접고 편다. `defaultOpen` 은 렌더 시점의 펼침만 결정하고
- * 그 뒤 사용자가 누른 open/close 는 React 가 되돌리지 않는다.
+ * 기타 비용은 있을 수도 없을 수도 있는 선택 항목이라 `CollapsibleSection`으로 접고 편다.
  */
 
 import { useState } from 'react';
@@ -75,7 +69,7 @@ export function ExtraCosts() {
   // 입력칸이 튀어다니면 몇 명만 고치는 흐름에서 엉뚱한 칸을 건드리게 된다.
   const targets = splitAll ? members : members.filter((m) => selected.includes(m.id));
   // 균등 분배는 반드시 splitEvenly 를 거친다. 전원이 같은 금액을 내도록 올리는 이 앱의
-  // 분배 규칙이고, Math.floor 로 직접 나누면 한 명만 1원 덜 내는 옛 동작으로 되돌아간다.
+  // 분배 규칙이고, Math.floor 로 직접 나누면 한 명만 1원 덜 내게 된다.
   const evenShare = splitEvenly(amount, targets.length)[0] ?? 0;
   const draftAmounts: Record<string, number> = Object.fromEntries(
     targets.map((m) => [m.id, perPerson ? overrides[m.id] ?? evenShare : evenShare])
@@ -251,7 +245,7 @@ export function ExtraCosts() {
                       <p className="break-words font-medium text-slate-900">{e.label}</p>
                       {payers.length === 0 ? (
                         // 아무에게도 청구되지 않는 항목. 결과 카드에도 미수금 경고가 뜨지만
-                        // 고칠 수 있는 곳은 여기이므로 입력 화면에서 먼저 드러낸다 (F3).
+                        // 고칠 수 있는 곳은 여기이므로 입력 화면에서 먼저 드러낸다.
                         <p className="break-words text-sm font-medium text-amber-800">
                           낼 사람이 없어 정산에 반영되지 않아요
                         </p>

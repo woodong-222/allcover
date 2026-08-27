@@ -22,7 +22,7 @@ describe('ShareBar', () => {
     expect(onShare).not.toHaveBeenCalled();
   });
 
-  it('D1/R2: 공유 버튼 클릭은 onShare를 동기적으로(한 번) 호출한다', async () => {
+  it('공유 버튼 클릭은 onShare를 동기적으로(한 번) 호출한다', async () => {
     const onShare = vi.fn();
     const user = userEvent.setup();
     render(<ShareBar onShare={onShare} onDownload={vi.fn()} onCopyText={vi.fn()} ready={true} />);
@@ -32,7 +32,7 @@ describe('ShareBar', () => {
     expect(onShare).toHaveBeenCalledTimes(1);
   });
 
-  it('D1/R2 회귀 방지: ShareBar는 onClick={onShare}를 그대로 연결한다 — await 경계를 추가로 끼워넣지 않는다', () => {
+  it('회귀 방지: ShareBar는 onClick={onShare}를 그대로 연결한다 — await 경계를 추가로 끼워넣지 않는다', () => {
     /**
      * "onShare가 호출됐다"만으로는 부족하다 — ShareBar가 onClick={() => { await 뭔가; onShare(); }}
      * 처럼 스스로 async 래퍼를 씌워도 그 검사는 그대로 통과한다.
@@ -124,7 +124,7 @@ describe('ShareBar', () => {
     expect(screen.getByText('공유에 실패했어요')).toBeInTheDocument();
   });
 
-  it('D4: outcome="cancelled"면 아무 문구도 띄우지 않는다', () => {
+  it('outcome="cancelled"면 아무 문구도 띄우지 않는다', () => {
     render(
       <ShareBar
         onShare={vi.fn()}
@@ -138,7 +138,7 @@ describe('ShareBar', () => {
     expect(screen.getByRole('status')).toHaveTextContent('');
   });
 
-  it('E2: 버튼 3개 모두 히트 영역이 44px 이상이 되도록 min-h/min-w 클래스를 갖는다', () => {
+  it('버튼 3개 모두 히트 영역이 44px 이상이 되도록 min-h/min-w 클래스를 갖는다', () => {
     render(<ShareBar onShare={vi.fn()} onDownload={vi.fn()} onCopyText={vi.fn()} ready={true} />);
     for (const label of ['공유하기', '이미지 저장', '텍스트 복사']) {
       const button = screen.getByRole('button', { name: label });

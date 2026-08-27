@@ -1,9 +1,6 @@
 /**
  * 카카오톡 등에 붙여넣을 플레인 텍스트 정산 요약.
- * 계획서: .omc/plans/2026-08-21-allcover-bowling-settlement.md §3 인수조건 D7
- *
- * 총무/송금 안내 줄은 2026-08-21 사용자 요청으로 제거됐다 (types.ts의
- * Settlement.treasurerId 제거 주석 참고). "누가 얼마"와 총액만 보여준다.
+ * "누가 얼마"와 총액만 보여준다.
  */
 
 import type { MemberResult } from '../types';

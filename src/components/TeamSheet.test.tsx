@@ -153,7 +153,7 @@ describe('TeamSheet', () => {
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 
-  it('E1/E2: 칩 목록은 flex-wrap이고 버튼이 44px 히트 영역을 갖는다', async () => {
+  it('칩 목록은 flex-wrap이고 버튼이 44px 히트 영역을 갖는다', async () => {
     const user = userEvent.setup();
     render(<Harness onClose={() => {}} />);
     await user.click(screen.getByRole('button', { name: '2팀' }));

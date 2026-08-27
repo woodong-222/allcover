@@ -166,7 +166,7 @@ describe('PayoutEditor', () => {
     expect(currentRound().payout).toEqual([3000, 2000]);
   });
 
-  it('등수별 인당 배당 입력이 setPayout으로 반영된다 (E3: inputMode numeric)', async () => {
+  it('등수별 인당 배당 입력이 setPayout으로 반영된다 (inputMode numeric)', async () => {
     seed(makeRound({ ranking: [['a'], ['b']], payout: [0, 0] }));
     const user = userEvent.setup();
     render(<Harness />);
@@ -178,7 +178,7 @@ describe('PayoutEditor', () => {
     expect(currentRound().payout).toEqual([3000, 0]);
   });
 
-  it('E2: 액션 버튼이 44px 히트 영역을 갖는다', () => {
+  it('액션 버튼이 44px 히트 영역을 갖는다', () => {
     seed(makeRound({ ranking: [['a'], ['b']], payout: [0, 0] }));
     render(<Harness />);
     for (const name of ['나머지 자동 분배', '승자독식', '1·2등 차등']) {
@@ -190,12 +190,11 @@ describe('PayoutEditor', () => {
 });
 
 /**
- * finding #3 회귀 방지.
  * 프리셋과 자동 분배가 소수 payout을 만들면 (a) 결과 카드·공유 이미지에 소수가 찍히고
  * (b) NumberField가 소수점을 제거해 금액이 100배로 튀며 (c) (pot/n)*n !== pot 인 인원수에서
  * imbalance에 부동소수 먼지가 남아 "0원 어긋남"이라는 무의미한 경고가 뜬다.
  */
-describe('PayoutEditor — 배당액 정수 보장 (finding #3)', () => {
+describe('PayoutEditor — 배당액 정수 보장', () => {
   /** n1:n2:n3 팀 구성으로 참여자와 순위를 만든다. ranking은 팀 그대로 */
   function teamRound(groupSizes: number[], ante: number, payout: number[]): Round {
     const teams: string[][] = [];
@@ -214,7 +213,7 @@ describe('PayoutEditor — 배당액 정수 보장 (finding #3)', () => {
   }
 
   it('7명 3팀(3/2/2) 승자독식 → payout 전원 정수이고 imbalance가 정확히 0', async () => {
-    // pot 7,000을 3명 그룹에 균등 배분하면 2333.333…이 된다. 예전 구현이 이 값을 그대로 넣었다.
+    // pot 7,000을 3명 그룹에 균등 배분하면 2333.333…이 된다. 이 값이 그대로 들어가면 안 된다.
     seed(teamRound([3, 2, 2], 1000, [0, 0, 0]));
     const user = userEvent.setup();
     render(<Harness />);
@@ -307,7 +306,7 @@ describe('PayoutEditor — 배당액 정수 보장 (finding #3)', () => {
   });
 });
 
-describe('distributeRemainder — 탐색 상한 (2026-08-23 보안 검토 MEDIUM)', () => {
+describe('distributeRemainder — 탐색 상한', () => {
   /**
    * 4단계 정수 해 탐색의 window 는 잔액에 선형 비례한다. 상한이 없으면 배당액 10억 입력 시
    * 7.5억 회를 돌아 메인 스레드가 10초 넘게 멈춘다. 게다가 PayoutEditor 가 매 렌더마다

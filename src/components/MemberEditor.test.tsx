@@ -22,7 +22,7 @@ function participantList(): HTMLElement {
 }
 
 describe('MemberEditor', () => {
-  it('이름 입력창이 label과 연결되어 있다 (E4 전제조건, 실제 Tab 순회 검증은 a11y.test.tsx)', () => {
+  it('이름 입력창이 label과 연결되어 있다 (실제 Tab 순회 검증은 a11y.test.tsx)', () => {
     render(<MemberEditor />);
     expect(screen.getByLabelText('멤버 이름')).toBeInTheDocument();
   });
@@ -97,7 +97,7 @@ describe('MemberEditor', () => {
     expect(screen.getAllByText('중복')).toHaveLength(2);
   });
 
-  it('reviewer finding #8: 최근 멤버 이름 칩이 44x44px 히트 영역을 갖는다 (한 글자 이름도)', () => {
+  it('최근 멤버 이름 칩이 44x44px 히트 영역을 갖는다 (한 글자 이름도)', () => {
     usePrefsStore.setState({ recentMemberNames: ['가'] });
     render(<MemberEditor />);
 
@@ -106,7 +106,7 @@ describe('MemberEditor', () => {
     expect(chip.className).toMatch(/min-w-11/);
   });
 
-  it('참여자 칩 개편: 칩 이름을 탭하면 인라인 편집으로 전환되고 Enter로 확정하면 스토어에 반영된다', async () => {
+  it('참여자 칩 이름을 탭하면 인라인 편집으로 전환되고 Enter로 확정하면 스토어에 반영된다', async () => {
     useSettlementStore.getState().addMember('철수');
     const user = userEvent.setup();
     render(<MemberEditor />);
@@ -120,7 +120,7 @@ describe('MemberEditor', () => {
     expect(within(participantList()).getByRole('button', { name: '철수2' })).toBeInTheDocument();
   });
 
-  it('참여자 칩 개편: 편집 중 Escape를 누르면 원래 이름으로 되돌아가고 스토어는 바뀌지 않는다', async () => {
+  it('참여자 칩 편집 중 Escape를 누르면 원래 이름으로 되돌아가고 스토어는 바뀌지 않는다', async () => {
     useSettlementStore.getState().addMember('철수');
     const user = userEvent.setup();
     render(<MemberEditor />);
@@ -135,7 +135,7 @@ describe('MemberEditor', () => {
     expect(within(participantList()).getByRole('button', { name: '철수' })).toBeInTheDocument();
   });
 
-  it('참여자 칩 개편: 한 글자 이름 칩의 삭제 버튼도 44x44px 히트 영역을 갖는다 (finding #8 재확인)', () => {
+  it('한 글자 이름 참여자 칩의 삭제 버튼도 44x44px 히트 영역을 갖는다', () => {
     useSettlementStore.getState().addMember('가');
     render(<MemberEditor />);
 
@@ -147,7 +147,7 @@ describe('MemberEditor', () => {
     expect(chip?.className).toMatch(/min-w-11/);
   });
 
-  it('참여자 칩 개편: 멤버가 여러 명이면 flex-wrap 컨테이너 안에 내용 폭 칩으로 렌더된다 (가로 스크롤 방지, E1)', () => {
+  it('멤버가 여러 명이면 참여자 칩이 flex-wrap 컨테이너 안에 내용 폭으로 렌더된다 (가로 스크롤 방지)', () => {
     for (let i = 1; i <= 10; i++) {
       useSettlementStore.getState().addMember(`멤버${i}`);
     }
@@ -163,7 +163,7 @@ describe('MemberEditor', () => {
   });
 });
 
-describe('MemberEditor — 칩 내부 탭 대상 히트 영역 (2026-08-24 브라우저 실측)', () => {
+describe('MemberEditor — 칩 내부 탭 대상 히트 영역', () => {
   beforeEach(() => {
     usePrefsStore.setState({ ...initialPrefs });
     useSettlementStore.getState().resetSession();
@@ -172,10 +172,10 @@ describe('MemberEditor — 칩 내부 탭 대상 히트 영역 (2026-08-24 브�
   /**
    * 실제 손가락이 닿는 건 칩 컨테이너가 아니라 그 안의 이름 버튼이다.
    * 컨테이너에만 min-h-11/min-w-11 을 걸고 안쪽 버튼을 min-h-9 로 두면
-   * 한 글자 이름에서 28x36px 이 되어 E2 를 못 채운다 — 실제 브라우저에서 그렇게 나왔다.
-   * 컨테이너만 검사하던 기존 테스트는 이 결함을 통과시켰다.
+   * 한 글자 이름에서 28x36px 이 되어 최소 탭 영역에 못 미친다. 그래서 컨테이너가 아니라
+   * 버튼을 검사한다.
    */
-  it('E2: 한 글자 이름의 이름 버튼도 44px 최소 크기를 갖는다', () => {
+  it('한 글자 이름의 이름 버튼도 44px 최소 크기를 갖는다', () => {
     useSettlementStore.getState().addMember('가');
     render(<MemberEditor />);
 
@@ -188,7 +188,7 @@ describe('MemberEditor — 칩 내부 탭 대상 히트 영역 (2026-08-24 브�
     }
   });
 
-  it('E2: 인라인 편집 입력도 44px 높이를 갖는다', async () => {
+  it('인라인 편집 입력도 44px 높이를 갖는다', async () => {
     const user = userEvent.setup();
     useSettlementStore.getState().addMember('가');
     render(<MemberEditor />);

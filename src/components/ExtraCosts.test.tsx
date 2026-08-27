@@ -109,7 +109,7 @@ describe('ExtraCosts', () => {
     expect(screen.getByLabelText('항목명')).toBeVisible();
   });
 
-  it('E3: 항목명/총액 입력이 label로 연결되고 금액은 numeric 키패드를 쓴다 (E4 전제조건, 실제 Tab 순회 검증은 a11y.test.tsx)', async () => {
+  it('항목명/총액 입력이 label로 연결되고 금액은 numeric 키패드를 쓴다 (실제 Tab 순회 검증은 a11y.test.tsx)', async () => {
     const user = userEvent.setup();
     render(<ExtraCosts />);
     await expand(user);
@@ -398,7 +398,7 @@ describe('ExtraCosts', () => {
     });
   });
 
-  describe('E2: 히트 영역', () => {
+  describe('히트 영역', () => {
     it('분담 대상 체크박스를 감싼 label이 44x44px 히트 영역을 갖는다 (한 글자 이름도)', async () => {
       addMembers('가');
       const user = userEvent.setup();

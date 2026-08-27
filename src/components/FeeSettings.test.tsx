@@ -11,7 +11,7 @@ beforeEach(() => {
 });
 
 describe('FeeSettings', () => {
-  it('E3: 게임 단가/신발비 입력이 label로 연결되고 numeric 키패드를 쓴다 (E4 전제조건, 실제 Tab 순회 검증은 a11y.test.tsx)', () => {
+  it('게임 단가/신발비 입력이 label로 연결되고 numeric 키패드를 쓴다 (실제 Tab 순회 검증은 a11y.test.tsx)', () => {
     render(<FeeSettings />);
     for (const label of ['게임 단가', '신발비']) {
       const input = screen.getByLabelText(label);
@@ -38,7 +38,7 @@ describe('FeeSettings', () => {
     expect(useSettlementStore.getState().settlement.shoeFee).toBe(2000);
   });
 
-  it('§5-A-1: 반올림은 항상 1원 단위 올림으로 고정되어 반올림 단위 선택 UI가 더 이상 렌더되지 않는다', () => {
+  it('반올림은 항상 1원 단위 올림이라 반올림 단위 선택 UI가 렌더되지 않는다', () => {
     render(<FeeSettings />);
 
     expect(screen.queryByText('반올림 단위')).not.toBeInTheDocument();
@@ -48,7 +48,7 @@ describe('FeeSettings', () => {
     }
   });
 
-  it('defaultAnte·treasurerId는 types.ts에서 삭제됐다 — "기본 판돈"·"총무" 필드가 렌더되지 않는다', () => {
+  it('"기본 판돈"·"총무" 필드는 렌더되지 않는다', () => {
     render(<FeeSettings />);
 
     expect(screen.queryByLabelText('기본 판돈')).not.toBeInTheDocument();
