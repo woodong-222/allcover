@@ -280,6 +280,9 @@ describe('PayoutEditor — 배당액 정수 보장', () => {
     expect(screen.getByRole('button', { name: '나머지 자동 분배' })).toBeDisabled();
   });
 
+  // 조합마다 렌더 + 클릭이 한 번씩 들어가 50회를 돈다. 기본 제한(5초)에 아슬아슬하게
+  // 걸쳐 있어 다른 테스트와 같이 돌 때 간헐적으로 시간 초과가 났다. 멈추는 게 아니라
+  // 원래 느린 검사이므로 제한만 넉넉히 잡는다.
   it('프리셋 2종 × 그룹 인원 1~5 조합 전부에서 payout이 정수이고 음수가 없다', async () => {
     const user = userEvent.setup();
     for (const n1 of [1, 2, 3, 4, 5]) {
@@ -302,7 +305,7 @@ describe('PayoutEditor — 배당액 정수 보장', () => {
         }
       }
     }
-  });
+  }, 30_000);
 });
 
 describe('distributeRemainder — 탐색 상한', () => {

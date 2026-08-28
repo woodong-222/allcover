@@ -118,6 +118,8 @@ type SettlementState = {
 
   /** 세션만 초기화. 요금 프리셋과 최근 멤버 이름은 유지된다 */
   resetSession: () => void;
+  /** 보관함에서 꺼낸 정산으로 지금 화면을 통째로 바꾼다 */
+  loadSettlement: (settlement: Settlement) => void;
 };
 
 function mapRounds(
@@ -392,5 +394,17 @@ export const useSettlementStore = create<SettlementState>()((set) => ({
       // 사용자에게 지웠다는 뜻이므로 그 사본도 함께 지운다.
       clearCorruptBackups();
       set({ settlement: createEmptySettlement(prefs) });
+    },
+
+    loadSettlement: (settlement) => {
+      // 보관본은 그대로 두고 사본을 화면에 올린다. 안 그러면 불러온 뒤 금액을 고칠 때
+      // 보관함에 남아 있는 원본까지 같이 바뀐다.
+      const loaded = structuredClone(settlement);
+      set({ settlement: loaded });
+      // 불러온 정산의 요금을 프리셋에도 반영해 다음 새 정산이 같은 값으로 시작하게 한다.
+      usePrefsStore.getState().setFees({
+        gameFeePerGame: loaded.gameFeePerGame,
+        shoeFee: loaded.shoeFee,
+      });
     },
 }));

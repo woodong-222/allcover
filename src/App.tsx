@@ -11,6 +11,7 @@ import { FeeSettings } from './components/FeeSettings';
 import { ShoeRentalPicker } from './components/ShoeRentalPicker';
 import { RoundList } from './components/RoundList';
 import { ExtraCosts } from './components/ExtraCosts';
+import { Archive } from './components/Archive';
 import { ResultCard } from './components/ResultCard';
 import { ShareBar } from './components/ShareBar';
 
@@ -155,6 +156,7 @@ export default function App() {
           <ShoeRentalPicker />
           <RoundList />
           <ExtraCosts />
+          <Archive />
         </div>
 
         <div className="mt-4 flex flex-col gap-4 lg:sticky lg:top-4 lg:mt-0">
