@@ -400,6 +400,12 @@ export const useSettlementStore = create<SettlementState>()((set) => ({
       // 보관본은 그대로 두고 사본을 화면에 올린다. 안 그러면 불러온 뒤 금액을 고칠 때
       // 보관함에 남아 있는 원본까지 같이 바뀐다.
       const loaded = structuredClone(settlement);
+
+      // 보관본은 지금 스키마보다 오래됐을 수 있어 요금이 비어 있거나 숫자가 아닐 수 있다.
+      // 그대로 두면 계산이 NaN 이 되고, 프리셋에까지 번져 요금과 최근 멤버가 통째로 날아간다.
+      loaded.gameFeePerGame = toWon(loaded.gameFeePerGame);
+      loaded.shoeFee = toWon(loaded.shoeFee);
+
       set({ settlement: loaded });
       // 불러온 정산의 요금을 프리셋에도 반영해 다음 새 정산이 같은 값으로 시작하게 한다.
       usePrefsStore.getState().setFees({

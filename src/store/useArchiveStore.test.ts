@@ -158,15 +158,45 @@ describe('loadSettlement', () => {
     expect(entry.settlement.gameFeePerGame).toBe(4000);
   });
 
-  it('불러온 뒤 화면에서 고쳐도 보관본은 바뀌지 않는다', () => {
-    useArchiveStore.getState().save({ label: '보관본', settlement: mkSettlement() });
-    const entry = useArchiveStore.getState().entries[0];
+  it('불러와서 고친 뒤 다시 저장하면 두 보관본이 각자 남는다', () => {
+    useArchiveStore.getState().save({ label: '원본', settlement: mkSettlement() });
+    const original = useArchiveStore.getState().entries[0];
 
-    useSettlementStore.getState().loadSettlement(entry.settlement);
+    useSettlementStore.getState().loadSettlement(original.settlement);
     useSettlementStore.getState().addMember('새 멤버');
+    useArchiveStore
+      .getState()
+      .save({ label: '수정본', settlement: useSettlementStore.getState().settlement });
 
-    expect(useSettlementStore.getState().settlement.members).toHaveLength(2);
-    expect(useArchiveStore.getState().entries[0].settlement.members).toHaveLength(1);
+    const [latest, first] = useArchiveStore.getState().entries;
+    expect(latest.label).toBe('수정본');
+    expect(latest.settlement.members).toHaveLength(2);
+    expect(first.label).toBe('원본');
+    expect(first.settlement.members).toHaveLength(1);
+  });
+
+  /**
+   * 보관본은 지금 스키마보다 오래됐을 수 있다. 요금이 빠진 값을 그대로 올리면 계산이 NaN 이
+   * 되고, 그 값이 프리셋으로 흘러 들어가면 다음 실행에서 프리셋 전체가 손상 판정을 받아
+   * 요금과 최근 멤버 이름까지 통째로 초기화된다.
+   */
+  it('요금이 빠진 옛 보관본을 불러와도 프리셋에 성한 숫자만 들어간다', () => {
+    const legacy = {
+      ...mkSettlement(),
+      gameFeePerGame: undefined,
+      shoeFee: undefined,
+    } as unknown as Settlement;
+
+    useSettlementStore.getState().loadSettlement(legacy);
+
+    const s = useSettlementStore.getState().settlement;
+    expect(s.gameFeePerGame).toBe(0);
+    expect(s.shoeFee).toBe(0);
+
+    const prefs = usePrefsStore.getState();
+    expect(Number.isFinite(prefs.gameFeePerGame)).toBe(true);
+    expect(Number.isFinite(prefs.shoeFee)).toBe(true);
+    expect(prefs.gameFeePerGame).toBe(0);
   });
 });
 
@@ -200,5 +230,49 @@ describe('보관함 영속성', () => {
 
     const backup = Object.keys(window.localStorage).find((k) => k.startsWith('allcover:corrupt:'));
     expect(backup).toBeDefined();
+    // 손상값 자체는 지워야 한다. 남겨두면 열 때마다 같은 값을 다시 만나 백업을 반복한다.
+    expect(window.localStorage.getItem('allcover:archive:v1')).toBeNull();
+  });
+
+  /**
+   * 모양이 깨진 보관본이 화면까지 올라가면 계산 중에 터진다. 에러 경계가 없어 앱이 백지가
+   * 되므로, 스토어에 들어오기 전에 걸러져야 한다.
+   *
+   * 걸러내는 단위(전체 폐기냐 항목 단위냐)는 여기서 못 박지 않는다. 살아남은 항목이 전부
+   * 계산 가능한 모양이라는 것만 계약이다.
+   */
+  it('모양이 깨진 보관본은 스토어에 올라오지 않는다', async () => {
+    window.localStorage.setItem(
+      'allcover:archive:v1',
+      JSON.stringify({
+        version: 1,
+        state: {
+          entries: [
+            {
+              id: 'ok',
+              label: '정상',
+              savedAt: '2026-08-27T10:00:00.000Z',
+              settlement: mkSettlement(),
+            },
+            {
+              id: 'bad',
+              label: '깨짐',
+              savedAt: '2026-08-27T10:00:00.000Z',
+              settlement: { members: [{ id: 'm1', name: '철수' }] },
+            },
+          ],
+        },
+      })
+    );
+
+    const { useArchiveStore: reloaded } = await import('./useArchiveStore');
+    const { entries } = reloaded.getState();
+
+    expect(entries.some((e) => e.label === '깨짐')).toBe(false);
+    expect(
+      entries.every(
+        (e) => Array.isArray(e.settlement.rounds) && Array.isArray(e.settlement.members)
+      )
+    ).toBe(true);
   });
 });
